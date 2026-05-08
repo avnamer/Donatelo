@@ -1,0 +1,205 @@
+// Prisma Schema - Investment Tracker
+// All monetary values stored as BigInt (agorot/cents × 100)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// PORTFOLIO STRUCTURE
+// ─────────────────────────────────────────────
+
+model Portfolio {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  name         String
+  baseCurrency String   @default("ILS") @map("base_currency")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  folders      Folder[]
+  cashAccounts CashAccount[]
+  transactions Transaction[]
+
+  @@index([userId])
+  @@map("portfolios")
+}
+
+model Folder {
+  id                   String   @id @default(uuid())
+  portfolioId          String   @map("portfolio_id")
+  parentId             String?  @map("parent_id")
+  name                 String
+  color                String?
+  targetAllocationPct  Decimal? @map("target_allocation_pct") @db.Decimal(5, 2)
+  sortOrder            Int      @default(0) @map("sort_order")
+  isHiddenWhenShared   Boolean  @default(false) @map("is_hidden_when_shared")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  portfolio  Portfolio  @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  parent     Folder?    @relation("FolderTree", fields: [parentId], references: [id])
+  children   Folder[]   @relation("FolderTree")
+  holdings   Holding[]
+
+  @@index([portfolioId])
+  @@index([parentId])
+  @@map("folders")
+}
+
+model Holding {
+  id                  String   @id @default(uuid())
+  folderId            String   @map("folder_id")
+  tickerSymbol        String   @map("ticker_symbol")
+  exchange            String   // 'TASE' | 'NYSE' | 'NASDAQ' | 'OTHER'
+  name                String
+  expenseRatio        Decimal? @map("expense_ratio") @db.Decimal(6, 4)
+  targetAllocationPct Decimal? @map("target_allocation_pct") @db.Decimal(5, 2)
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  folder       Folder        @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  lots         Lot[]
+  transactions Transaction[]
+
+  @@index([folderId])
+  @@index([tickerSymbol])
+  @@map("holdings")
+}
+
+model Lot {
+  id                String    @id @default(uuid())
+  holdingId         String    @map("holding_id")
+  purchaseDate      DateTime  @map("purchase_date") @db.Date
+  shares            Decimal   @db.Decimal(18, 6)
+  costPerShare      BigInt    @map("cost_per_share")     // in agorot (ILS×100) or cents (USD×100)
+  costCurrency      String    @default("ILS") @map("cost_currency")
+  accountType       String?   @map("account_type")       // e.g. "השתלמות", "פנסיה"
+  soldShares        Decimal   @default(0) @map("sold_shares") @db.Decimal(18, 6)
+  soldDate          DateTime? @map("sold_date") @db.Date
+  soldPricePerShare BigInt?   @map("sold_price_per_share")
+  proceedsFromSale  BigInt?   @map("proceeds_from_sale")
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  holding      Holding       @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([holdingId])
+  @@map("lots")
+}
+
+model CashAccount {
+  id                  String   @id @default(uuid())
+  portfolioId         String   @map("portfolio_id")
+  name                String
+  currency            String   // 'ILS' | 'USD'
+  balance             BigInt   @default(0)  // in agorot or cents
+  targetAllocationPct Decimal? @map("target_allocation_pct") @db.Decimal(5, 2)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  portfolio    Portfolio     @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([portfolioId])
+  @@map("cash_accounts")
+}
+
+// ─────────────────────────────────────────────
+// ACTIVITY / TRANSACTIONS
+// ─────────────────────────────────────────────
+
+model Transaction {
+  id            String    @id @default(uuid())
+  portfolioId   String    @map("portfolio_id")
+  type          String    // 'SECURITY_BUY' | 'SECURITY_SELL' | 'DIVIDEND' | 'CASH_DEPOSIT' | 'CASH_WITHDRAWAL'
+  date          DateTime  @db.Date
+  holdingId     String?   @map("holding_id")
+  lotId         String?   @map("lot_id")
+  cashAccountId String?   @map("cash_account_id")
+  shares        Decimal?  @db.Decimal(18, 6)
+  pricePerShare BigInt?   @map("price_per_share")
+  amount        BigInt    // total amount in agorot/cents
+  currency      String
+  realizedGain  BigInt?   @map("realized_gain")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  portfolio   Portfolio    @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  holding     Holding?     @relation(fields: [holdingId], references: [id])
+  lot         Lot?         @relation(fields: [lotId], references: [id])
+  cashAccount CashAccount? @relation(fields: [cashAccountId], references: [id])
+
+  @@index([portfolioId])
+  @@index([date(sort: Desc)])
+  @@index([holdingId])
+  @@map("transactions")
+}
+
+// ─────────────────────────────────────────────
+// PRICE & MARKET DATA CACHE (shared, no user_id)
+// ─────────────────────────────────────────────
+
+model PriceCache {
+  id           String   @id @default(uuid())
+  tickerSymbol String   @map("ticker_symbol")
+  exchange     String   // 'TASE' | 'US'
+  price        BigInt   // in agorot (TASE) or cents (US)
+  currency     String
+  priceDate    DateTime @map("price_date") @db.Date
+  fetchedAt    DateTime @default(now()) @map("fetched_at")
+
+  @@unique([tickerSymbol, priceDate])
+  @@index([tickerSymbol, priceDate(sort: Desc)])
+  @@map("price_cache")
+}
+
+model DividendCache {
+  id            String    @id @default(uuid())
+  tickerSymbol  String    @map("ticker_symbol")
+  exchange      String
+  declareDate   DateTime? @map("declare_date") @db.Date
+  exDate        DateTime  @map("ex_date") @db.Date
+  payDate       DateTime? @map("pay_date") @db.Date
+  amountPerShare BigInt   @map("amount_per_share") // in cents
+  currency      String
+  frequency     String?   // 'monthly' | 'quarterly' | 'annual' | 'irregular'
+  fetchedAt     DateTime  @default(now()) @map("fetched_at")
+
+  @@unique([tickerSymbol, exDate])
+  @@index([tickerSymbol])
+  @@map("dividend_cache")
+}
+
+model FxRate {
+  id           String   @id @default(uuid())
+  fromCurrency String   @map("from_currency")
+  toCurrency   String   @map("to_currency")
+  rate         Decimal  @db.Decimal(12, 6)
+  rateDate     DateTime @map("rate_date") @db.Date
+  fetchedAt    DateTime @default(now()) @map("fetched_at")
+
+  @@unique([fromCurrency, toCurrency, rateDate])
+  @@map("fx_rates")
+}
+
+// ─────────────────────────────────────────────
+// EXPLORE PROFILES
+// ─────────────────────────────────────────────
+
+model ExploreProfile {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  allocations Json     // [{name, pct, color}]
+  isFeatured  Boolean  @default(false) @map("is_featured")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("explore_profiles")
+}

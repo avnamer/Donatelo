@@ -1,0 +1,67 @@
+// ─────────────────────────────────────────────
+// UI store — client-side ephemeral state
+//
+// Persists nothing to localStorage intentionally;
+// currency preference is the exception (persisted).
+// ─────────────────────────────────────────────
+
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+import type { Currency } from '@/types'
+
+export type TimeRange = '1M' | '3M' | '6M' | 'YTD' | '1Y' | '3Y' | 'ALL'
+
+interface UIState {
+  // Display currency (ILS or USD)
+  currency: Currency
+  setCurrency: (c: Currency) => void
+
+  // Which folder/portfolio is expanded in the tree
+  expandedFolderIds: string[]
+  toggleFolder: (id: string) => void
+  setExpandedFolders: (ids: string[]) => void
+
+  // Time range for performance chart
+  timeRange: TimeRange
+  setTimeRange: (r: TimeRange) => void
+
+  // Selected portfolio id (null = all portfolios)
+  selectedPortfolioId: string | null
+  setSelectedPortfolioId: (id: string | null) => void
+}
+
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      // ── Currency ──────────────────────────────
+      currency: 'ILS',
+      setCurrency: (currency) => set({ currency }),
+
+      // ── Folders ───────────────────────────────
+      expandedFolderIds: [],
+      toggleFolder: (id) =>
+        set((s) => ({
+          expandedFolderIds: s.expandedFolderIds.includes(id)
+            ? s.expandedFolderIds.filter((x) => x !== id)
+            : [...s.expandedFolderIds, id],
+        })),
+      setExpandedFolders: (ids) => set({ expandedFolderIds: ids }),
+
+      // ── Time Range ────────────────────────────
+      timeRange: '1Y',
+      setTimeRange: (timeRange) => set({ timeRange }),
+
+      // ── Portfolio ─────────────────────────────
+      selectedPortfolioId: null,
+      setSelectedPortfolioId: (id) => set({ selectedPortfolioId: id }),
+    }),
+    {
+      name: 'donatelo-ui',
+      // Only persist currency and timeRange; tree expansion is ephemeral
+      partialize: (state) => ({
+        currency: state.currency,
+        timeRange: state.timeRange,
+      }),
+    }
+  )
+)

@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────
 
 import {
-  AreaChart,
+  ComposedChart,
   Area,
   Line,
   XAxis,
@@ -198,7 +198,7 @@ export function PerformanceChart({ data, benchmarkData = [], loading }: Performa
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+          <ComposedChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="fillGain" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="hsl(var(--gain))" stopOpacity={0.15} />
@@ -247,7 +247,7 @@ export function PerformanceChart({ data, benchmarkData = [], loading }: Performa
                 connectNulls
               />
             )}
-          </AreaChart>
+          </ComposedChart>
         </ResponsiveContainer>
       )}
 

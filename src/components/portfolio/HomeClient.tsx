@@ -68,6 +68,9 @@ function buildPeriodDailyValues(
 
   if (lotsWithCost.length === 0) return []
 
+  // Total cost basis across all lots (display currency)
+  const totalCostBasis = lotsWithCost.reduce((sum, l) => sum + l.displayCostBasis, 0n)
+
   const priorLots  = lotsWithCost.filter((l) => l.purchaseDate < cutoff)
   const periodLots = lotsWithCost
     .filter((l) => l.purchaseDate >= cutoff)
@@ -77,17 +80,29 @@ function buildPeriodDailyValues(
 
   if (priorCostBasis === 0n && periodLots.length === 0) return []
 
+  // Estimate market value at any accumulated cost basis by scaling proportionally
+  // from today's known total value. Assumes uniform return across holdings —
+  // best approximation without historical prices.
+  const estimateValue = (accumulatedCostBasis: bigint): bigint =>
+    totalCostBasis > 0n ? (totalValue * accumulatedCostBasis) / totalCostBasis : accumulatedCostBasis
+
   const startDate  = priorCostBasis > 0n ? cutoff : periodLots[0].purchaseDate
-  const startValue = priorCostBasis > 0n ? priorCostBasis : periodLots[0].displayCostBasis
+  // For prior lots: scale to estimated market value at period start (fixes the
+  // "all-time return shown as period return" bug caused by using raw cost basis)
+  const startValue = priorCostBasis > 0n
+    ? estimateValue(priorCostBasis)
+    : periodLots[0].displayCostBasis
 
   const points: Array<{ date: Date; value: bigint }> = [{ date: startDate, value: startValue }]
 
-  let running = priorCostBasis > 0n ? priorCostBasis : (periodLots[0]?.displayCostBasis ?? 0n)
+  let runningCostBasis = priorCostBasis > 0n
+    ? priorCostBasis
+    : (periodLots[0]?.displayCostBasis ?? 0n)
   const toAdd = priorCostBasis > 0n ? periodLots : periodLots.slice(1)
 
   for (const lot of toAdd) {
-    running += lot.displayCostBasis
-    points.push({ date: lot.purchaseDate, value: running })
+    runningCostBasis += lot.displayCostBasis
+    points.push({ date: lot.purchaseDate, value: estimateValue(runningCostBasis) })
   }
 
   points.push({ date: today, value: totalValue })

@@ -24,6 +24,19 @@ interface HomeClientProps {
 }
 
 // ─── Performance data builder ─────────────────
+//
+// WITHOUT historical prices the only anchor points we have are:
+//   • each lot's purchase date  →  its cost basis (value at purchase by definition)
+//   • today                     →  current market value (totalValue)
+//
+// For ALL time: return those two endpoints directly.  The return shown is
+// (totalValue / totalCostBasis − 1) which is the correct lifetime return.
+//
+// For period views (3M, YTD …): linearly interpolate along the all-time
+// baseline to find the estimated portfolio value at the period cutoff, then
+// return [cutoff → interpolatedValue, today → totalValue].  This distributes
+// the all-time gain proportionally over time and avoids the capital-addition
+// distortion that comes from comparing cost-basis partitions.
 
 function buildPeriodDailyValues(
   holdingMetrics: HoldingMetrics[],
@@ -31,82 +44,48 @@ function buildPeriodDailyValues(
   timeRange: TimeRange,
 ): Array<{ date: Date; value: bigint }> {
   const today = new Date()
-  const cutoff = getTimeRangeCutoff(timeRange, today)
 
-  if (timeRange === 'ALL') {
-    const allLots = holdingMetrics.flatMap((h) => h.lots)
-    if (allLots.length === 0) return []
-    const oldestDate = allLots.reduce((min, lot) => {
-      const d = new Date(lot.purchaseDate)
-      return d < min ? d : min
-    }, today)
-    const totalCostBasis = holdingMetrics.reduce((sum, h) => sum + h.costBasis, 0n)
+  const allLots = holdingMetrics.flatMap((h) => h.lots)
+  if (allLots.length === 0) return []
+
+  const oldestDate = allLots.reduce((min, lot) => {
+    const d = new Date(lot.purchaseDate)
+    return d < min ? d : min
+  }, today)
+
+  const totalCostBasis = holdingMetrics.reduce((sum, h) => sum + h.costBasis, 0n)
+
+  if (timeRange === 'ALL' || totalCostBasis === 0n) {
     return [
       { date: oldestDate, value: totalCostBasis },
       { date: today,      value: totalValue },
     ]
   }
 
-  type LotEntry = { purchaseDate: Date; displayCostBasis: bigint }
-  const lotsWithCost: LotEntry[] = []
+  const cutoff = getTimeRangeCutoff(timeRange, today)
 
-  for (const holding of holdingMetrics) {
-    const nativeCosts = holding.lots.map(
-      (lot) => lot.shares * Number(lot.costPerShare)
-    )
-    const totalNative = nativeCosts.reduce((a, b) => a + b, 0)
-    if (totalNative === 0) continue
-
-    for (let i = 0; i < holding.lots.length; i++) {
-      const ratio = nativeCosts[i] / totalNative
-      lotsWithCost.push({
-        purchaseDate:     new Date(holding.lots[i].purchaseDate),
-        displayCostBasis: BigInt(Math.round(Number(holding.costBasis) * ratio)),
-      })
-    }
+  // If the cutoff predates the oldest lot, fall back to the full history
+  if (cutoff <= oldestDate) {
+    return [
+      { date: oldestDate, value: totalCostBasis },
+      { date: today,      value: totalValue },
+    ]
   }
 
-  if (lotsWithCost.length === 0) return []
+  // Linear interpolation: value at cutoff = costBasis + gain × t
+  // where t = (cutoff − oldest) / (today − oldest)
+  const totalMs   = today.getTime() - oldestDate.getTime()
+  const elapsedMs = cutoff.getTime() - oldestDate.getTime()
+  const t         = elapsedMs / totalMs   // 0 < t < 1
 
-  // Total cost basis across all lots (display currency)
-  const totalCostBasis = lotsWithCost.reduce((sum, l) => sum + l.displayCostBasis, 0n)
+  const gain            = totalValue - totalCostBasis
+  const interpolatedGain = BigInt(Math.round(Number(gain) * t))
+  const valueAtCutoff   = totalCostBasis + interpolatedGain
 
-  const priorLots  = lotsWithCost.filter((l) => l.purchaseDate < cutoff)
-  const periodLots = lotsWithCost
-    .filter((l) => l.purchaseDate >= cutoff)
-    .sort((a, b) => a.purchaseDate.getTime() - b.purchaseDate.getTime())
-
-  const priorCostBasis = priorLots.reduce((sum, l) => sum + l.displayCostBasis, 0n)
-
-  if (priorCostBasis === 0n && periodLots.length === 0) return []
-
-  // Estimate market value at any accumulated cost basis by scaling proportionally
-  // from today's known total value. Assumes uniform return across holdings —
-  // best approximation without historical prices.
-  const estimateValue = (accumulatedCostBasis: bigint): bigint =>
-    totalCostBasis > 0n ? (totalValue * accumulatedCostBasis) / totalCostBasis : accumulatedCostBasis
-
-  const startDate  = priorCostBasis > 0n ? cutoff : periodLots[0].purchaseDate
-  // For prior lots: scale to estimated market value at period start (fixes the
-  // "all-time return shown as period return" bug caused by using raw cost basis)
-  const startValue = priorCostBasis > 0n
-    ? estimateValue(priorCostBasis)
-    : periodLots[0].displayCostBasis
-
-  const points: Array<{ date: Date; value: bigint }> = [{ date: startDate, value: startValue }]
-
-  let runningCostBasis = priorCostBasis > 0n
-    ? priorCostBasis
-    : (periodLots[0]?.displayCostBasis ?? 0n)
-  const toAdd = priorCostBasis > 0n ? periodLots : periodLots.slice(1)
-
-  for (const lot of toAdd) {
-    runningCostBasis += lot.displayCostBasis
-    points.push({ date: lot.purchaseDate, value: estimateValue(runningCostBasis) })
-  }
-
-  points.push({ date: today, value: totalValue })
-  return points
+  return [
+    { date: cutoff, value: valueAtCutoff },
+    { date: today,  value: totalValue },
+  ]
 }
 
 // ─── Main component ───────────────────────────

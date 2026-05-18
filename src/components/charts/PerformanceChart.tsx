@@ -62,28 +62,58 @@ function TimeRangeSelector() {
 
 // ─── Custom tooltip ───────────────────────────
 
+interface TooltipPayloadItem {
+  dataKey: string
+  value: number
+  color: string
+}
+
 interface TooltipProps {
   active?: boolean
-  payload?: Array<{ value: number }>
+  payload?: TooltipPayloadItem[]
   label?: string
+}
+
+function TooltipRow({ color, label, change }: { color: string; label: string; change: number }) {
+  return (
+    <div className="flex items-center justify-between gap-4 mt-1">
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+        {label}
+      </span>
+      <span
+        className="text-xs font-semibold tabular-nums"
+        style={{ color }}
+      >
+        {change >= 0 ? '+' : ''}{change.toFixed(2)}%
+      </span>
+    </div>
+  )
 }
 
 function CustomTooltip({ active, payload, label }: TooltipProps) {
   if (!active || !payload?.length) return null
 
-  const index = payload[0].value
-  const change = index - 100
-  const isPositive = change >= 0
+  const portfolio  = payload.find((p) => p.dataKey === 'index')
+  const benchmark  = payload.find((p) => p.dataKey === 'benchmarkIndex')
+
+  if (!portfolio) return null
 
   return (
-    <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-sm">
-      <p className="text-muted-foreground text-xs">{label}</p>
-      <p className="font-semibold tabular-nums">
-        {index.toFixed(2)}
-      </p>
-      <p className={cn('text-xs font-medium', isPositive ? 'text-gain' : 'text-loss')}>
-        {isPositive ? '+' : ''}{change.toFixed(2)}%
-      </p>
+    <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-sm min-w-[140px]">
+      <p className="text-muted-foreground text-xs mb-0.5">{label}</p>
+      <TooltipRow
+        color={portfolio.color}
+        label="Portfolio"
+        change={portfolio.value - 100}
+      />
+      {benchmark != null && (
+        <TooltipRow
+          color={benchmark.color}
+          label="Benchmark"
+          change={benchmark.value - 100}
+        />
+      )}
     </div>
   )
 }
@@ -201,11 +231,11 @@ export function PerformanceChart({ data, benchmarkData = [], loading }: Performa
           <ComposedChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="fillGain" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(var(--gain))" stopOpacity={0.15} />
+                <stop offset="5%" stopColor="hsl(var(--gain))" stopOpacity={0.25} />
                 <stop offset="95%" stopColor="hsl(var(--gain))" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="fillLoss" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(var(--loss))" stopOpacity={0.15} />
+                <stop offset="5%" stopColor="hsl(var(--loss))" stopOpacity={0.25} />
                 <stop offset="95%" stopColor="hsl(var(--loss))" stopOpacity={0} />
               </linearGradient>
             </defs>
@@ -229,7 +259,7 @@ export function PerformanceChart({ data, benchmarkData = [], loading }: Performa
               type="monotone"
               dataKey="index"
               stroke={strokeColor}
-              strokeWidth={2}
+              strokeWidth={2.5}
               fill={`url(#${fillId})`}
               dot={false}
               activeDot={{ r: 4, strokeWidth: 0, fill: strokeColor }}
@@ -240,10 +270,10 @@ export function PerformanceChart({ data, benchmarkData = [], loading }: Performa
                 type="monotone"
                 dataKey="benchmarkIndex"
                 stroke="#3b82f6"
-                strokeWidth={1.5}
-                strokeDasharray="4 2"
+                strokeWidth={2}
+                strokeDasharray="5 3"
                 dot={false}
-                activeDot={false}
+                activeDot={{ r: 4, strokeWidth: 0, fill: '#3b82f6' }}
                 connectNulls
               />
             )}

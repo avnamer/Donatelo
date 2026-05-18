@@ -1,8 +1,7 @@
 // ─────────────────────────────────────────────
 // UI store — client-side ephemeral state
 //
-// Persists nothing to localStorage intentionally;
-// currency preference is the exception (persisted).
+// Persists currency, timeRange, and benchmark to localStorage as user preferences.
 // ─────────────────────────────────────────────
 
 import { create } from 'zustand'
@@ -10,6 +9,25 @@ import { persist } from 'zustand/middleware'
 import type { Currency } from '@/types'
 
 export type TimeRange = '1M' | '3M' | '6M' | 'YTD' | '1Y' | '3Y' | 'ALL'
+
+export type BenchmarkId =
+  | 'none'
+  | '^GSPC'
+  | 'URTH'
+  | '^IXIC'
+  | '^TA35.TA'
+  | '^TA90.TA'
+  | '^TA125.TA'
+
+export const BENCHMARK_LABELS: Record<BenchmarkId, string> = {
+  'none':      'ללא השוואה',
+  '^GSPC':     'S&P 500',
+  'URTH':      'MSCI World',
+  '^IXIC':     'Nasdaq',
+  '^TA35.TA':  'תל אביב 35',
+  '^TA90.TA':  'תל אביב 90',
+  '^TA125.TA': 'תל אביב 125',
+}
 
 interface UIState {
   // Display currency (ILS or USD)
@@ -24,6 +42,10 @@ interface UIState {
   // Time range for performance chart
   timeRange: TimeRange
   setTimeRange: (r: TimeRange) => void
+
+  // Selected benchmark for performance chart
+  benchmark: BenchmarkId
+  setBenchmark: (b: BenchmarkId) => void
 
   // Selected portfolio id (null = all portfolios)
   selectedPortfolioId: string | null
@@ -55,6 +77,10 @@ export const useUIStore = create<UIState>()(
       timeRange: '1Y',
       setTimeRange: (timeRange) => set({ timeRange }),
 
+      // ── Benchmark ─────────────────────────────
+      benchmark: '^GSPC',
+      setBenchmark: (benchmark) => set({ benchmark }),
+
       // ── Portfolio ─────────────────────────────
       selectedPortfolioId: null,
       setSelectedPortfolioId: (id) => set({ selectedPortfolioId: id }),
@@ -65,10 +91,11 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'donatelo-ui',
-      // Only persist currency and timeRange; tree expansion is ephemeral
+      // Only persist currency, timeRange, and benchmark; tree expansion is ephemeral
       partialize: (state) => ({
         currency: state.currency,
         timeRange: state.timeRange,
+        benchmark: state.benchmark,
       }),
     }
   )

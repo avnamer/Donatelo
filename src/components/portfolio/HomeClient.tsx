@@ -10,10 +10,11 @@ import { UnavailablePricesPanel } from './UnavailablePricesPanel'
 import { PerformanceChart } from '@/components/charts/PerformanceChart'
 import { AllocationDonut } from '@/components/charts/AllocationDonut'
 import { calcIndexedPerformance, formatCurrency, formatPercent } from '@/lib/calculations'
-import { useUIStore } from '@/store/ui'
-import { cn } from '@/lib/utils'
-import type { ServerHolding } from '@/hooks/usePortfolio'
+import { cn, getTimeRangeCutoff } from '@/lib/utils'
+import { useUIStore, type TimeRange } from '@/store/ui'
+import type { ServerHolding, HoldingMetrics } from '@/hooks/usePortfolio'
 import type { FolderRow } from '@/lib/db/queries'
+import { useBenchmark } from '@/hooks/useBenchmark'
 
 interface HomeClientProps {
   holdings: ServerHolding[]
@@ -22,11 +23,86 @@ interface HomeClientProps {
   folders: FolderRow[]
 }
 
+// ─── Performance data builder ─────────────────
+
+function buildPeriodDailyValues(
+  holdingMetrics: HoldingMetrics[],
+  totalValue: bigint,
+  timeRange: TimeRange,
+): Array<{ date: Date; value: bigint }> {
+  const today = new Date()
+  const cutoff = getTimeRangeCutoff(timeRange, today)
+
+  if (timeRange === 'ALL') {
+    const allLots = holdingMetrics.flatMap((h) => h.lots)
+    if (allLots.length === 0) return []
+    const oldestDate = allLots.reduce((min, lot) => {
+      const d = new Date(lot.purchaseDate)
+      return d < min ? d : min
+    }, today)
+    const totalCostBasis = holdingMetrics.reduce((sum, h) => sum + h.costBasis, 0n)
+    return [
+      { date: oldestDate, value: totalCostBasis },
+      { date: today,      value: totalValue },
+    ]
+  }
+
+  type LotEntry = { purchaseDate: Date; displayCostBasis: bigint }
+  const lotsWithCost: LotEntry[] = []
+
+  for (const holding of holdingMetrics) {
+    const nativeCosts = holding.lots.map(
+      (lot) => lot.shares * Number(lot.costPerShare)
+    )
+    const totalNative = nativeCosts.reduce((a, b) => a + b, 0)
+    if (totalNative === 0) continue
+
+    for (let i = 0; i < holding.lots.length; i++) {
+      const ratio = nativeCosts[i] / totalNative
+      lotsWithCost.push({
+        purchaseDate:     new Date(holding.lots[i].purchaseDate),
+        displayCostBasis: BigInt(Math.round(Number(holding.costBasis) * ratio)),
+      })
+    }
+  }
+
+  if (lotsWithCost.length === 0) return []
+
+  const priorLots  = lotsWithCost.filter((l) => l.purchaseDate < cutoff)
+  const periodLots = lotsWithCost
+    .filter((l) => l.purchaseDate >= cutoff)
+    .sort((a, b) => a.purchaseDate.getTime() - b.purchaseDate.getTime())
+
+  const priorCostBasis = priorLots.reduce((sum, l) => sum + l.displayCostBasis, 0n)
+
+  if (priorCostBasis === 0n && periodLots.length === 0) return []
+
+  const startDate  = priorCostBasis > 0n ? cutoff : periodLots[0].purchaseDate
+  const startValue = priorCostBasis > 0n ? priorCostBasis : periodLots[0].displayCostBasis
+
+  const points: Array<{ date: Date; value: bigint }> = [{ date: startDate, value: startValue }]
+
+  let running = priorCostBasis > 0n ? priorCostBasis : (periodLots[0]?.displayCostBasis ?? 0n)
+  const toAdd = priorCostBasis > 0n ? periodLots : periodLots.slice(1)
+
+  for (const lot of toAdd) {
+    running += lot.displayCostBasis
+    points.push({ date: lot.purchaseDate, value: running })
+  }
+
+  points.push({ date: today, value: totalValue })
+  return points
+}
+
+// ─── Main component ───────────────────────────
+
 export function HomeClient({ holdings, portfolioName, portfolioId, folders }: HomeClientProps) {
   const queryClient = useQueryClient()
   const metrics = usePortfolioMetrics(holdings)
   const currency = useUIStore((s) => s.currency)
   const setOffTarget = useUIStore((s) => s.setOffTarget)
+  const timeRange = useUIStore((s) => s.timeRange)
+  const benchmark = useUIStore((s) => s.benchmark)
   const [hoveredFolderId, setHoveredFolderId] = useState<string | null>(null)
 
   // Force-refresh prices for unavailable holdings, then invalidate React Query cache
@@ -54,21 +130,20 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
 
   const performanceData = useMemo(() => {
     if (metrics.pricesLoading || metrics.totalValue === 0n) return []
-    const allLots = holdings.flatMap((h) => h.lots)
-    if (allLots.length === 0) return []
-    const oldestDate = allLots.reduce((min, lot) => {
-      const d = new Date(lot.purchaseDate)
-      return d < min ? d : min
-    }, new Date())
-    return calcIndexedPerformance([
-      { date: oldestDate, value: metrics.totalCostBasis },
-      { date: new Date(), value: metrics.totalValue },
-    ])
-  }, [metrics, holdings])
+    const dailyValues = buildPeriodDailyValues(metrics.holdings, metrics.totalValue, timeRange)
+    if (dailyValues.length === 0) return []
+    return calcIndexedPerformance(dailyValues)
+  }, [metrics, timeRange])
+
+  const fromDate = useMemo(() => {
+    if (performanceData.length === 0) return new Date()
+    return performanceData[0].date
+  }, [performanceData])
+
+  const { data: benchmarkData } = useBenchmark(benchmark, fromDate)
 
   // Build allocation segments for donut
   const donutSegments = useMemo(() => {
-    // Group holding metrics by root folder
     const map = new Map<string, { name: string; color: string | null; value: bigint; targetPct: number | null }>()
 
     for (const h of metrics.holdings) {
@@ -115,7 +190,11 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start">
         {/* Performance chart — takes the bulk of the width */}
         <div className="flex-1 min-w-0 w-full">
-          <PerformanceChart data={performanceData} loading={metrics.pricesLoading} />
+          <PerformanceChart
+            data={performanceData}
+            benchmarkData={benchmarkData}
+            loading={metrics.pricesLoading}
+          />
         </div>
 
         {/* KPI list — horizontal row on mobile, vertical on desktop */}

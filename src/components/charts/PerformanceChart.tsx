@@ -9,13 +9,14 @@
 import {
   AreaChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { useUIStore, type TimeRange } from '@/store/ui'
+import { useUIStore, type TimeRange, type BenchmarkId, BENCHMARK_LABELS } from '@/store/ui'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -28,6 +29,7 @@ export interface PerformancePoint {
 
 interface PerformanceChartProps {
   data: PerformancePoint[]
+  benchmarkData?: PerformancePoint[]
   loading?: boolean
 }
 
@@ -86,9 +88,70 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
   )
 }
 
+// ─── Merge chart data ─────────────────────────
+
+type ChartRow = { date: string; index: number | null; benchmarkIndex: number | null }
+
+function mergeChartData(
+  portfolioData: PerformancePoint[],
+  benchmarkData: PerformancePoint[],
+): ChartRow[] {
+  const map = new Map<string, ChartRow>()
+
+  for (const p of portfolioData) {
+    const iso = p.date.toISOString().slice(0, 10)
+    map.set(iso, { date: formatDate(p.date), index: p.index, benchmarkIndex: null })
+  }
+  for (const p of benchmarkData) {
+    const iso = p.date.toISOString().slice(0, 10)
+    const row = map.get(iso)
+    if (row) {
+      row.benchmarkIndex = p.index
+    } else {
+      map.set(iso, { date: formatDate(p.date), index: null, benchmarkIndex: p.index })
+    }
+  }
+
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, row]) => row)
+}
+
+// ─── Benchmark selector ───────────────────────
+
+const BENCHMARK_IDS: BenchmarkId[] = [
+  'none', '^GSPC', 'URTH', '^IXIC', '^TA35.TA', '^TA90.TA', '^TA125.TA',
+]
+
+function BenchmarkSelector() {
+  const { benchmark, setBenchmark } = useUIStore()
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      <span className="text-xs text-muted-foreground mr-1">vs:</span>
+      {BENCHMARK_IDS.map((id) => (
+        <button
+          key={id}
+          onClick={() => setBenchmark(id)}
+          className={cn(
+            'px-2.5 py-1 rounded text-xs font-medium transition-colors',
+            benchmark === id
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+          )}
+        >
+          {BENCHMARK_LABELS[id]}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────
 
-export function PerformanceChart({ data, loading }: PerformanceChartProps) {
+export function PerformanceChart({ data, benchmarkData = [], loading }: PerformanceChartProps) {
+  const { benchmark } = useUIStore()
+
   if (loading) {
     return (
       <div className="rounded-xl border bg-card p-4">
@@ -102,19 +165,15 @@ export function PerformanceChart({ data, loading }: PerformanceChartProps) {
   }
 
   const isPositive = data.length < 2 || data[data.length - 1]?.index >= 100
-
-  const chartData = data.map((p) => ({
-    date: formatDate(p.date),
-    index: p.index,
-  }))
-
   const strokeColor = isPositive ? 'hsl(var(--gain))' : 'hsl(var(--loss))'
-  const fillId = isPositive ? 'fillGain' : 'fillLoss'
+  const fillId      = isPositive ? 'fillGain' : 'fillLoss'
+
+  const chartData = mergeChartData(data, benchmarkData)
 
   return (
     <div className="rounded-xl border bg-card p-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div>
           <p className="text-sm font-medium text-muted-foreground">Performance</p>
           {data.length > 1 && (
@@ -125,6 +184,11 @@ export function PerformanceChart({ data, loading }: PerformanceChartProps) {
           )}
         </div>
         <TimeRangeSelector />
+      </div>
+
+      {/* Benchmark chips */}
+      <div className="mb-3">
+        <BenchmarkSelector />
       </div>
 
       {/* Chart */}
@@ -169,13 +233,50 @@ export function PerformanceChart({ data, loading }: PerformanceChartProps) {
               fill={`url(#${fillId})`}
               dot={false}
               activeDot={{ r: 4, strokeWidth: 0, fill: strokeColor }}
+              connectNulls
             />
+            {benchmark !== 'none' && benchmarkData.length > 0 && (
+              <Line
+                type="monotone"
+                dataKey="benchmarkIndex"
+                stroke="#3b82f6"
+                strokeWidth={1.5}
+                strokeDasharray="4 2"
+                dot={false}
+                activeDot={false}
+                connectNulls
+              />
+            )}
           </AreaChart>
         </ResponsiveContainer>
       )}
 
+      {/* Legend */}
+      {data.length > 0 && benchmark !== 'none' && benchmarkData.length > 0 && (
+        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-3 h-0.5 rounded"
+              style={{ backgroundColor: strokeColor }}
+            />
+            Portfolio
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-3 h-0.5"
+              style={{
+                backgroundColor: '#3b82f6',
+                backgroundImage:
+                  'repeating-linear-gradient(90deg,#3b82f6 0px,#3b82f6 4px,transparent 4px,transparent 6px)',
+              }}
+            />
+            {BENCHMARK_LABELS[benchmark]}
+          </span>
+        </div>
+      )}
+
       {data.length > 0 && (
-        <p className="text-xs text-muted-foreground mt-2 text-center">
+        <p className="text-xs text-muted-foreground mt-1 text-center">
           Simulated performance — indexed to 100 at start of period
         </p>
       )}

@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import type { TimeRange } from '@/store/ui'
 
 /** Merge Tailwind classes safely */
 export function cn(...inputs: ClassValue[]) {
@@ -61,4 +62,17 @@ export function safeParseFloat(value: string | undefined | null): number {
   if (!value) return 0
   const n = parseFloat(value)
   return isNaN(n) ? 0 : n
+}
+
+export function getTimeRangeCutoff(timeRange: TimeRange, today: Date = new Date()): Date {
+  const d = new Date(today)
+  switch (timeRange) {
+    case '1M':  d.setDate(d.getDate() - 30);       return d
+    case '3M':  d.setDate(d.getDate() - 90);       return d
+    case '6M':  d.setDate(d.getDate() - 180);      return d
+    case 'YTD': return new Date(d.getFullYear(), 0, 1)
+    case '1Y':  d.setFullYear(d.getFullYear() - 1); return d
+    case '3Y':  d.setFullYear(d.getFullYear() - 3); return d
+    case 'ALL': return new Date(0)
+  }
 }

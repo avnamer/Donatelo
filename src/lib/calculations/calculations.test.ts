@@ -311,3 +311,53 @@ describe('formatPercent', () => {
     expect(formatPercent(117.08, 1)).toBe('+117.1%')
   })
 })
+
+import { getTimeRangeCutoff } from '@/lib/utils'
+import type { TimeRange } from '@/store/ui'
+
+describe('getTimeRangeCutoff', () => {
+  const today = new Date('2026-05-18T12:00:00Z')
+
+  it('1M → 30 days before today', () => {
+    const result = getTimeRangeCutoff('1M', today)
+    const expected = new Date('2026-04-18T12:00:00Z')
+    expect(result.toDateString()).toBe(expected.toDateString())
+  })
+
+  it('3M → 90 days before today', () => {
+    const result = getTimeRangeCutoff('3M', today)
+    const expected = new Date(today)
+    expected.setDate(expected.getDate() - 90)
+    expect(result.toDateString()).toBe(expected.toDateString())
+  })
+
+  it('6M → 180 days before today', () => {
+    const result = getTimeRangeCutoff('6M', today)
+    const expected = new Date(today)
+    expected.setDate(expected.getDate() - 180)
+    expect(result.toDateString()).toBe(expected.toDateString())
+  })
+
+  it('YTD → Jan 1 of current year', () => {
+    const result = getTimeRangeCutoff('YTD', today)
+    expect(result.getFullYear()).toBe(2026)
+    expect(result.getMonth()).toBe(0)
+    expect(result.getDate()).toBe(1)
+  })
+
+  it('1Y → 1 year before today', () => {
+    const result = getTimeRangeCutoff('1Y', today)
+    expect(result.getFullYear()).toBe(2025)
+    expect(result.getMonth()).toBe(today.getMonth())
+  })
+
+  it('3Y → 3 years before today', () => {
+    const result = getTimeRangeCutoff('3Y', today)
+    expect(result.getFullYear()).toBe(2023)
+  })
+
+  it('ALL → epoch (no cutoff)', () => {
+    const result = getTimeRangeCutoff('ALL', today)
+    expect(result.getTime()).toBe(0)
+  })
+})

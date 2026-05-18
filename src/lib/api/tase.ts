@@ -1,15 +1,12 @@
 // ─────────────────────────────────────────────
-// TASE DataWise API client — Israeli securities
-// Docs: internal / TASE DataWise portal
+// Yahoo Finance client — Israeli securities (TASE)
+//
+// Uses Yahoo Finance's public quote endpoint (no API key required).
+// Tickers use the .TA suffix, e.g. "LUMI.TA", "TEVA.TA", "ICL.TA"
 //
 // All prices returned as agorot (ILS × 100).
-// TASE uses "agorot" natively for prices < 100 ILS, and
-// full ILS decimals for larger values — we normalize to
-// the same BigInt agorot convention as the rest of the app.
+// Yahoo Finance returns prices in ILS for .TA tickers.
 // ─────────────────────────────────────────────
-
-const BASE_URL = process.env.TASE_API_URL ?? 'https://api.tase.co.il/api'
-const API_KEY = process.env.TASE_API_KEY!
 
 // ─── Types ────────────────────────────────────
 
@@ -17,52 +14,37 @@ export interface TaseSecurityInfo {
   securityId: string
   name: string
   nameEn?: string
-  type: string      // 'STOCK' | 'ETF' | 'BOND' | 'MUTUAL_FUND'
-  currency: string  // usually 'ILS'
+  type: string
+  currency: string
 }
 
 export interface TaseBar {
-  date: string   // YYYY-MM-DD
-  closePrice: number  // in ILS (not agorot)
+  date: string
+  closePrice: number
   volume?: number
 }
 
 export interface TaseDividend {
   exDate: string
   payDate?: string
-  amountPerShare: number  // in ILS
+  amountPerShare: number
   currency: string
 }
 
 // ─── Helpers ──────────────────────────────────
 
-async function taseFetch<T>(
-  path: string,
-  params: Record<string, string> = {}
-): Promise<T> {
-  const url = new URL(`${BASE_URL}${path}`)
-  for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, v)
-  }
-
-  const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      Accept: 'application/json',
-    },
-    next: { revalidate: 0 },
-  })
-
-  if (!res.ok) {
-    throw new Error(`TASE API error ${res.status}: ${path}`)
-  }
-
-  return res.json() as Promise<T>
-}
-
 /** Convert ILS amount to agorot (×100, rounded to integer). */
 export function ilsToAgorot(ils: number): bigint {
   return BigInt(Math.round(ils * 100))
+}
+
+/**
+ * Convert a Yahoo Finance price to agorot.
+ * Yahoo returns ILA (agorot) for .TA tickers — those are already agorot.
+ * Only multiply by 100 when the currency is actually ILS.
+ */
+function toAgorot(price: number, currency: string): bigint {
+  return currency === 'ILA' ? BigInt(Math.round(price)) : ilsToAgorot(price)
 }
 
 function toISODate(d: Date): string {
@@ -72,27 +54,33 @@ function toISODate(d: Date): string {
 // ─── Price fetching ───────────────────────────
 
 /**
- * Latest closing price for a TASE security.
- * securityId is the TASE 6-digit code (e.g. "1082209" for TA-125 ETF).
- * Returns price in agorot, or null on error.
+ * Latest NAV for an Israeli mutual fund via bizportal.co.il.
+ * taseId is a numeric TASE security ID, e.g. "5123179".
+ * Bizportal publishes NAVs in ILA (agorot) — stored as-is (already agorot).
  */
-export async function fetchLatestTasePrice(
-  securityId: string
+async function fetchLatestFundNAVFromBizportal(
+  taseId: string
 ): Promise<{ price: bigint; date: Date; currency: string } | null> {
   try {
-    // TASE API: /quote/security/{id}  (endpoint may vary by DataWise plan)
-    const data = await taseFetch<{
-      closePrice?: number
-      tradeDate?: string
-      currency?: string
-    }>(`/quote/security/${securityId}`)
+    const url = `https://www.bizportal.co.il/mutualfunds/quote/generalview/${taseId}`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html' },
+      next: { revalidate: 0 },
+    })
+    if (!res.ok) return null
 
-    if (!data.closePrice) return null
+    const html = await res.text()
+    // HTML structure: <div class="label">מחיר פדיון</div><div class="num">550.37</div>
+    const match = html.match(/מחיר פדיון<\/div><div class="num">([\d,]+\.?\d*)/)
+    if (!match) return null
+
+    const raw = parseFloat(match[1].replace(/,/g, ''))
+    if (!raw || isNaN(raw)) return null
 
     return {
-      price: ilsToAgorot(data.closePrice),
-      date: data.tradeDate ? new Date(data.tradeDate) : new Date(),
-      currency: data.currency ?? 'ILS',
+      price: BigInt(Math.round(raw)),  // already in ILA (agorot)
+      date: new Date(),
+      currency: 'ILS',
     }
   } catch {
     return null
@@ -100,27 +88,170 @@ export async function fetchLatestTasePrice(
 }
 
 /**
- * Historical daily closes for a TASE security.
+ * Latest price for any TASE security via bizportal.co.il.
+ * Tries bonds → capitalmarket → mutualfunds sections in order.
+ * Looks for common price labels: שער אחרון, מחיר פדיון.
+ * Returns price in agorot, or null if not found in any section.
+ */
+async function fetchBizportalSecurityPrice(
+  taseId: string
+): Promise<{ price: bigint; date: Date; currency: string } | null> {
+  const sections = ['bonds', 'capitalmarket', 'mutualfunds']
+  const pricePatterns = [
+    /<dt>שער בסיס<\/dt><dd>([\d,.]+)/,
+    /<dt>שער אחרון<\/dt><dd>([\d,.]+)/,
+    /מחיר פדיון<\/div><div class="num">([\d,.]+)/,
+  ]
+
+  for (const section of sections) {
+    try {
+      const url = `https://www.bizportal.co.il/${section}/quote/generalview/${taseId}`
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html' },
+        next: { revalidate: 0 },
+      })
+      if (!res.ok) continue
+
+      const html = await res.text()
+      for (const pattern of pricePatterns) {
+        const match = html.match(pattern)
+        if (!match) continue
+        const raw = parseFloat(match[1].replace(/,/g, ''))
+        if (!raw || isNaN(raw)) continue
+        return { price: BigInt(Math.round(raw)), date: new Date(), currency: 'ILS' }
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return null
+}
+
+/**
+ * Latest closing price for a TASE security.
+ * - For named tickers (e.g. "LUMI.TA"): uses Yahoo Finance.
+ * - For numeric TASE IDs (e.g. "5123179"): uses bizportal.co.il NAV scraper,
+ *   since these class-4 tracker funds (TTF/KTF/מחקה series) are not on Yahoo Finance.
+ * Returns price in agorot, or null on error.
+ */
+export async function fetchLatestTasePrice(
+  ticker: string
+): Promise<{ price: bigint; date: Date; currency: string } | null> {
+  // Pure numeric TASE IDs → use bizportal NAV (not available on Yahoo Finance)
+  if (/^\d+$/.test(ticker)) {
+    return fetchLatestFundNAVFromBizportal(ticker)
+  }
+
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`
+
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        Accept: 'application/json',
+      },
+      next: { revalidate: 0 },
+    })
+
+    if (!res.ok) {
+      // Yahoo Finance failed — for numeric-base .TA tickers, try bizportal
+      const numericBase = ticker.match(/^(\d+)\.TA$/)?.[1]
+      if (numericBase) return fetchBizportalSecurityPrice(numericBase)
+      return null
+    }
+
+    const data = await res.json() as {
+      chart?: {
+        result?: Array<{
+          meta?: { regularMarketPrice?: number; currency?: string; regularMarketTime?: number }
+          timestamp?: number[]
+          indicators?: { quote?: Array<{ close?: (number | null)[] }> }
+        }>
+        error?: unknown
+      }
+    }
+
+    const result = data.chart?.result?.[0]
+    if (!result) {
+      const numericBase = ticker.match(/^(\d+)\.TA$/)?.[1]
+      if (numericBase) return fetchBizportalSecurityPrice(numericBase)
+      return null
+    }
+
+    const meta = result.meta
+    const price = meta?.regularMarketPrice
+    if (!price) {
+      const numericBase = ticker.match(/^(\d+)\.TA$/)?.[1]
+      if (numericBase) return fetchBizportalSecurityPrice(numericBase)
+      return null
+    }
+
+    const currency = meta?.currency ?? 'ILS'
+    const ts = meta?.regularMarketTime
+    const date = ts ? new Date(ts * 1000) : new Date()
+
+    return {
+      price: toAgorot(price, currency),
+      date,
+      currency: currency === 'ILA' ? 'ILS' : currency,
+    }
+  } catch {
+    const numericBase = ticker.match(/^(\d+)\.TA$/)?.[1]
+    if (numericBase) return fetchBizportalSecurityPrice(numericBase)
+    return null
+  }
+}
+
+/**
+ * Historical daily closes for a TASE security via Yahoo Finance.
+ * ticker must use .TA suffix, e.g. "LUMI.TA"
  */
 export async function fetchTasePriceHistory(
-  securityId: string,
+  ticker: string,
   from: Date,
   to: Date
 ): Promise<Array<{ date: Date; price: bigint; currency: string }>> {
   try {
-    const data = await taseFetch<{ data?: TaseBar[] }>(
-      `/history/security/${securityId}`,
-      {
-        fromDate: toISODate(from),
-        toDate: toISODate(to),
-      }
-    )
+    const fromUnix = Math.floor(from.getTime() / 1000)
+    const toUnix = Math.floor(to.getTime() / 1000)
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&period1=${fromUnix}&period2=${toUnix}`
 
-    return (data.data ?? []).map((bar) => ({
-      date: new Date(bar.date),
-      price: ilsToAgorot(bar.closePrice),
-      currency: 'ILS',
-    }))
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      next: { revalidate: 0 },
+    })
+
+    if (!res.ok) return []
+
+    const data = await res.json() as {
+      chart?: {
+        result?: Array<{
+          timestamp?: number[]
+          meta?: { currency?: string }
+          indicators?: { quote?: Array<{ close?: (number | null)[] }> }
+        }>
+      }
+    }
+
+    const result = data.chart?.result?.[0]
+    if (!result) return []
+
+    const timestamps = result.timestamp ?? []
+    const closes = result.indicators?.quote?.[0]?.close ?? []
+    const currency = result.meta?.currency ?? 'ILS'
+
+    return timestamps
+      .map((ts, i) => {
+        const close = closes[i]
+        if (!close) return null
+        return {
+          date: new Date(ts * 1000),
+          price: toAgorot(close, currency),
+          currency: currency === 'ILA' ? 'ILS' : currency,
+        }
+      })
+      .filter((x): x is { date: Date; price: bigint; currency: string } => x !== null)
   } catch {
     return []
   }
@@ -128,17 +259,27 @@ export async function fetchTasePriceHistory(
 
 // ─── Security info ────────────────────────────
 
-/**
- * Name and type for a TASE security id.
- */
 export async function fetchTaseSecurityInfo(
-  securityId: string
+  ticker: string
 ): Promise<{ name: string; type: string } | null> {
   try {
-    const data = await taseFetch<TaseSecurityInfo>(
-      `/reference/security/${securityId}`
-    )
-    return { name: data.nameEn ?? data.name, type: data.type }
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      next: { revalidate: 0 },
+    })
+    if (!res.ok) return null
+
+    const data = await res.json() as {
+      chart?: { result?: Array<{ meta?: { shortName?: string; instrumentType?: string } }> }
+    }
+    const meta = data.chart?.result?.[0]?.meta
+    if (!meta) return null
+
+    return {
+      name: meta.shortName ?? ticker,
+      type: meta.instrumentType ?? 'STOCK',
+    }
   } catch {
     return null
   }
@@ -146,33 +287,38 @@ export async function fetchTaseSecurityInfo(
 
 // ─── Dividends ────────────────────────────────
 
-/**
- * Dividend history for a TASE security in the trailing 12 months.
- */
 export async function fetchTaseDividends(
-  securityId: string
-): Promise<
-  Array<{
-    exDate: Date
-    payDate?: Date
-    amountPerShare: bigint
-    currency: string
-  }>
-> {
+  ticker: string
+): Promise<Array<{ exDate: Date; payDate?: Date; amountPerShare: bigint; currency: string }>> {
   try {
-    const oneYearAgo = new Date()
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+    const oneYearAgo = Math.floor(Date.now() / 1000) - 365 * 24 * 3600
+    const now = Math.floor(Date.now() / 1000)
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?events=dividends&interval=1d&period1=${oneYearAgo}&period2=${now}`
 
-    const data = await taseFetch<{ data?: TaseDividend[] }>(
-      `/dividends/security/${securityId}`,
-      { fromDate: toISODate(oneYearAgo) }
-    )
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      next: { revalidate: 0 },
+    })
+    if (!res.ok) return []
 
-    return (data.data ?? []).map((d) => ({
-      exDate: new Date(d.exDate),
-      payDate: d.payDate ? new Date(d.payDate) : undefined,
-      amountPerShare: ilsToAgorot(d.amountPerShare),
-      currency: d.currency ?? 'ILS',
+    const data = await res.json() as {
+      chart?: {
+        result?: Array<{
+          meta?: { currency?: string }
+          events?: { dividends?: Record<string, { amount: number; date: number }> }
+        }>
+      }
+    }
+
+    const result = data.chart?.result?.[0]
+    const dividends = result?.events?.dividends
+    const currency = result?.meta?.currency ?? 'ILS'
+    if (!dividends) return []
+
+    return Object.values(dividends).map((d) => ({
+      exDate: new Date(d.date * 1000),
+      amountPerShare: toAgorot(d.amount, currency),
+      currency: currency === 'ILA' ? 'ILS' : currency,
     }))
   } catch {
     return []
@@ -181,19 +327,30 @@ export async function fetchTaseDividends(
 
 // ─── Search ───────────────────────────────────
 
-/**
- * Search TASE securities by name or symbol.
- * Used in the "add holding" search flow.
- */
 export async function searchTaseSecurities(
   query: string
 ): Promise<TaseSecurityInfo[]> {
   try {
-    const data = await taseFetch<{ results?: TaseSecurityInfo[] }>(
-      '/reference/securities/search',
-      { q: query, limit: '20' }
-    )
-    return data.results ?? []
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      next: { revalidate: 0 },
+    })
+    if (!res.ok) return []
+
+    const data = await res.json() as {
+      quotes?: Array<{ symbol?: string; shortname?: string; longname?: string; quoteType?: string; exchange?: string }>
+    }
+
+    return (data.quotes ?? [])
+      .filter((q) => q.exchange === 'TLV' || q.symbol?.endsWith('.TA'))
+      .map((q) => ({
+        securityId: q.symbol ?? '',
+        name: q.shortname ?? q.longname ?? q.symbol ?? '',
+        nameEn: q.shortname ?? q.longname,
+        type: q.quoteType ?? 'STOCK',
+        currency: 'ILS',
+      }))
   } catch {
     return []
   }

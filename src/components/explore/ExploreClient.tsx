@@ -5,8 +5,9 @@
 // Each card shows a donut chart + allocation breakdown
 // ─────────────────────────────────────────────
 
+import { useState } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
-import { Star } from 'lucide-react'
+import { Star, Copy, Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Types ────────────────────────────────────
@@ -28,7 +29,29 @@ interface ExploreProfile {
 // ─── Profile Card ─────────────────────────────
 
 function ProfileCard({ profile }: { profile: ExploreProfile }) {
-  const total = profile.allocations.reduce((s, a) => s + a.pct, 0)
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
+
+  async function handleUseTemplate() {
+    setStatus('loading')
+    setErrorMsg('')
+    try {
+      const res = await fetch(`/api/explore/${profile.id}/use-template`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? 'Failed to apply template')
+      }
+      setStatus('done')
+      // Reset after 4 s so the button is usable again
+      setTimeout(() => setStatus('idle'), 4000)
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong')
+      setStatus('error')
+      setTimeout(() => setStatus('idle'), 4000)
+    }
+  }
 
   return (
     <div className={cn(
@@ -37,7 +60,7 @@ function ProfileCard({ profile }: { profile: ExploreProfile }) {
     )}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           {profile.isFeatured && (
             <div className="flex items-center gap-1 text-primary text-xs font-medium mb-1">
               <Star className="h-3 w-3 fill-primary" />
@@ -65,7 +88,7 @@ function ProfileCard({ profile }: { profile: ExploreProfile }) {
                 dataKey="pct"
                 stroke="none"
               >
-                {profile.allocations.map((a, i) => (
+                {profile.allocations.map((a) => (
                   <Cell key={a.name} fill={a.color} />
                 ))}
               </Pie>
@@ -103,6 +126,32 @@ function ProfileCard({ profile }: { profile: ExploreProfile }) {
           )}
         </div>
       </div>
+
+      {/* Use as Template button */}
+      <div className="pt-1 border-t">
+        <button
+          onClick={handleUseTemplate}
+          disabled={status === 'loading' || status === 'done'}
+          className={cn(
+            'w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+            status === 'done'
+              ? 'bg-green-500/10 text-green-600 cursor-default'
+              : status === 'error'
+              ? 'bg-destructive/10 text-destructive hover:bg-destructive/20'
+              : 'bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50'
+          )}
+        >
+          {status === 'loading' ? (
+            <><Loader2 className="h-3 w-3 animate-spin" /> Applying…</>
+          ) : status === 'done' ? (
+            <><Check className="h-3 w-3" /> Folders created!</>
+          ) : status === 'error' ? (
+            <>{errorMsg}</>
+          ) : (
+            <><Copy className="h-3 w-3" /> Use as Template</>
+          )}
+        </button>
+      </div>
     </div>
   )
 }
@@ -118,7 +167,8 @@ export function ExploreClient({ profiles }: { profiles: ExploreProfile[] }) {
       <div>
         <h1 className="text-xl font-semibold">Explore</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Browse curated portfolio allocation strategies
+          Browse curated portfolio allocation strategies. Use as Template to copy a
+          strategy&apos;s folder structure into your portfolio.
         </p>
       </div>
 

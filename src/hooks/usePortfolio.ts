@@ -1,8 +1,3 @@
-// ─────────────────────────────────────────────
-// usePortfolio — load portfolio structure + compute metrics
-// Combines DB data with live prices and FX rate
-// ─────────────────────────────────────────────
-
 'use client'
 
 import { useMemo } from 'react'
@@ -18,6 +13,9 @@ import {
   calcTotalDeployed,
   calcTotalReturnPct,
   calcActualAllocationPct,
+  calcWeightedExpenseRatio,
+  calcXIRR,
+  buildXirrCashFlows,
 } from '@/lib/calculations'
 import type { Lot } from '@/types'
 
@@ -32,6 +30,11 @@ export interface HoldingMetrics {
   folderName: string
   folderColor: string | null
 
+  // Root folder (parentId = null) — may differ when holding is in a sub-folder
+  rootFolderId: string
+  rootFolderName: string
+  rootFolderColor: string | null
+
   activeShares: number
   currentPrice: bigint
   currentValue: bigint
@@ -42,9 +45,11 @@ export interface HoldingMetrics {
   totalDeployed: bigint
   totalReturnPct: number
   allocationPct: number
+  expenseRatio: number | null
 
   lots: Lot[]
   priceStale: boolean
+  priceUnavailable: boolean
 }
 
 export interface PortfolioMetrics {
@@ -55,12 +60,16 @@ export interface PortfolioMetrics {
   totalRealizedGains: bigint
   totalDeployed: bigint
   totalReturnPct: number
+  totalExpenseRatio: number
+  xirr: number | null
+  lastUpdated: Date | null
   holdings: HoldingMetrics[]
+  unavailableHoldings: HoldingMetrics[]
   pricesLoading: boolean
   pricesError: boolean
 }
 
-// ─── Server data type (what the server component fetches) ────
+// ─── Server data type ─────────────────────────
 
 export interface ServerHolding {
   id: string
@@ -68,20 +77,25 @@ export interface ServerHolding {
   name: string
   exchange: string
   folderId: string
+  expenseRatio: number | null
   folder: {
     name: string
     color: string | null
+    parentId?: string | null
   }
   lots: Lot[]
 }
 
 // ─── Hook ─────────────────────────────────────
 
-export function usePortfolioMetrics(holdings: ServerHolding[]): PortfolioMetrics {
+export function usePortfolioMetrics(
+  holdings: ServerHolding[],
+  // Optional: pre-built map of folderId → folder info for root resolution
+  folderMap?: Map<string, { name: string; color: string | null; parentId: string | null }>
+): PortfolioMetrics {
   const currency = useUIStore((s) => s.currency)
   const { data: fxRate = 3.72 } = useFxRate()
 
-  // Build ticker list for price fetching
   const tickers = useMemo(
     () => holdings.map((h) => `${h.tickerSymbol}:${h.exchange === 'TASE' ? 'TASE' : 'US'}`),
     [holdings]
@@ -118,6 +132,27 @@ export function usePortfolioMetrics(holdings: ServerHolding[]): PortfolioMetrics
       const totalDeployed = calcTotalDeployed(holding.lots, currency, fxRate)
       const totalReturnPct = calcTotalReturnPct(unrealizedGains, realizedGains, totalDeployed)
 
+      // Resolve root folder: walk up one level if parentId exists
+      const directParentId = holding.folder.parentId
+      let rootFolderId = holding.folderId
+      let rootFolderName = holding.folder.name
+      let rootFolderColor = holding.folder.color
+
+      if (directParentId) {
+        // This holding is in a sub-folder — root is the parent
+        const parentInfo = folderMap?.get(directParentId)
+        if (parentInfo) {
+          rootFolderId = directParentId
+          rootFolderName = parentInfo.name
+          rootFolderColor = parentInfo.color
+        } else {
+          // Fallback: use the parentId as root (name unknown without full folder data)
+          rootFolderId = directParentId
+          rootFolderName = holding.folder.name  // will be corrected when folderMap is provided
+          rootFolderColor = holding.folder.color
+        }
+      }
+
       holdingMetrics.push({
         holdingId: holding.id,
         tickerSymbol: holding.tickerSymbol,
@@ -126,6 +161,9 @@ export function usePortfolioMetrics(holdings: ServerHolding[]): PortfolioMetrics
         folderId: holding.folderId,
         folderName: holding.folder.name,
         folderColor: holding.folder.color,
+        rootFolderId,
+        rootFolderName,
+        rootFolderColor,
         activeShares,
         currentPrice,
         currentValue,
@@ -135,23 +173,48 @@ export function usePortfolioMetrics(holdings: ServerHolding[]): PortfolioMetrics
         realizedGains,
         totalDeployed,
         totalReturnPct,
-        allocationPct: 0,  // computed below after total is known
+        allocationPct: 0,
+        expenseRatio: holding.expenseRatio,
         lots: holding.lots,
         priceStale: priceEntry?.stale ?? false,
+        priceUnavailable: priceEntry?.unavailable ?? false,
       })
     }
 
-    // Total portfolio value
     const totalValue = holdingMetrics.reduce((s, h) => s + h.currentValue, 0n)
     const totalCostBasis = holdingMetrics.reduce((s, h) => s + h.costBasis, 0n)
     const totalUnrealizedGains = holdingMetrics.reduce((s, h) => s + h.unrealizedGains, 0n)
     const totalRealizedGains = holdingMetrics.reduce((s, h) => s + h.realizedGains, 0n)
     const totalDeployed = holdingMetrics.reduce((s, h) => s + h.totalDeployed, 0n)
 
-    // Backfill allocation %
     for (const h of holdingMetrics) {
       h.allocationPct = calcActualAllocationPct(h.currentValue, totalValue)
     }
+
+    const totalExpenseRatio = calcWeightedExpenseRatio(
+      holdingMetrics.map((h) => ({ value: h.currentValue, expenseRatio: h.expenseRatio }))
+    )
+
+    // Most recent price date across all holdings
+    const priceDates = Object.values(prices)
+      .map((p) => new Date(p.date))
+      .filter((d) => !isNaN(d.getTime()))
+    const lastUpdated = priceDates.length > 0
+      ? new Date(Math.max(...priceDates.map((d) => d.getTime())))
+      : null
+
+    const unavailableHoldings = holdingMetrics.filter((h) => h.priceUnavailable)
+
+    // XIRR: only compute when prices are loaded and we have value
+    const xirrFlows = !pricesLoading && totalValue > 0n
+      ? buildXirrCashFlows(
+          holdingMetrics.flatMap((h) => h.lots),
+          totalValue,
+          currency,
+          fxRate
+        )
+      : []
+    const xirr = xirrFlows.length >= 2 ? calcXIRR(xirrFlows) : null
 
     return {
       totalValue,
@@ -161,11 +224,15 @@ export function usePortfolioMetrics(holdings: ServerHolding[]): PortfolioMetrics
       totalRealizedGains,
       totalDeployed,
       totalReturnPct: calcTotalReturnPct(totalUnrealizedGains, totalRealizedGains, totalDeployed),
+      totalExpenseRatio,
+      xirr,
+      lastUpdated,
       holdings: holdingMetrics,
+      unavailableHoldings,
       pricesLoading,
       pricesError,
     }
-  }, [holdings, prices, currency, fxRate, pricesLoading, pricesError])
+  }, [holdings, prices, currency, fxRate, pricesLoading, pricesError, folderMap])
 
   return metrics
 }

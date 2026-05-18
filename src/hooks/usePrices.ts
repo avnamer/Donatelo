@@ -10,14 +10,16 @@ export interface PriceData {
   currency: string
   date: string
   stale: boolean
+  unavailable?: boolean
 }
 
 export type PriceMap = Record<string, PriceData>
 
-async function fetchPrices(tickers: string[]): Promise<PriceMap> {
+async function fetchPrices(tickers: string[], force = false): Promise<PriceMap> {
   if (tickers.length === 0) return {}
 
-  const res = await fetch(`/api/prices?tickers=${tickers.join(',')}`)
+  const url = `/api/prices?tickers=${tickers.join(',')}${force ? '&force=true' : ''}`
+  const res = await fetch(url)
   if (!res.ok) throw new Error('Failed to fetch prices')
 
   const raw = await res.json() as Record<string, {
@@ -25,9 +27,9 @@ async function fetchPrices(tickers: string[]): Promise<PriceMap> {
     currency: string
     date: string
     stale: boolean
+    unavailable?: boolean
   }>
 
-  // Convert string prices back to bigint
   const result: PriceMap = {}
   for (const [ticker, data] of Object.entries(raw)) {
     result[ticker] = { ...data, price: BigInt(data.price) }
@@ -37,14 +39,22 @@ async function fetchPrices(tickers: string[]): Promise<PriceMap> {
 
 /**
  * Fetch and cache prices for a set of tickers.
- * tickers format: ["AAPL:US", "1082209:TASE"]
+ * tickers format: ["AAPL:US", "LUMI.TA:TASE"]
  */
 export function usePrices(tickers: string[]) {
   return useQuery({
     queryKey: ['prices', ...tickers.sort()],
     queryFn: () => fetchPrices(tickers),
     enabled: tickers.length > 0,
-    staleTime: 1000 * 60 * 5,      // 5 minutes
-    refetchInterval: 1000 * 60 * 5, // auto-refetch every 5 min
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
   })
+}
+
+/**
+ * Force-refresh prices for specific tickers (bypasses server-side cache).
+ * Returns the fresh PriceMap.
+ */
+export async function refreshPrices(tickers: string[]): Promise<PriceMap> {
+  return fetchPrices(tickers, true)
 }

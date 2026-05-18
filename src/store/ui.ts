@@ -28,6 +28,10 @@ interface UIState {
   // Selected portfolio id (null = all portfolios)
   selectedPortfolioId: string | null
   setSelectedPortfolioId: (id: string | null) => void
+
+  // Whether any folder's actual allocation deviates from target by >2%
+  isOffTarget: boolean
+  setOffTarget: (v: boolean) => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -54,6 +58,10 @@ export const useUIStore = create<UIState>()(
       // ── Portfolio ─────────────────────────────
       selectedPortfolioId: null,
       setSelectedPortfolioId: (id) => set({ selectedPortfolioId: id }),
+
+      // ── Off-target allocations ─────────────────
+      isOffTarget: false,
+      setOffTarget: (isOffTarget) => set({ isOffTarget }),
     }),
     {
       name: 'donatelo-ui',

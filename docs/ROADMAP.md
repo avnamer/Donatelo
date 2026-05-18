@@ -11,64 +11,64 @@ then layer on features. Each phase ships something usable.
 **Estimated effort:** 2-3 weeks
 
 ### 1.1 Project Setup
-- [ ] `npx create-next-app@latest` with TypeScript + Tailwind
-- [ ] Install dependencies: shadcn/ui, TanStack Query, Recharts, Prisma, Zustand
-- [ ] Supabase project setup (DB + Auth)
-- [ ] Prisma schema + first migration
-- [ ] Environment variables
-- [ ] Basic folder structure per CLAUDE.md
+- [x] `npx create-next-app@latest` with TypeScript + Tailwind
+- [x] Install dependencies: shadcn/ui, TanStack Query, Recharts, Prisma, Zustand
+- [x] Supabase project setup (DB + Auth)
+- [x] Prisma schema + first migration
+- [x] Environment variables
+- [x] Basic folder structure per CLAUDE.md
 
 ### 1.2 Authentication
-- [ ] Supabase Auth: Google OAuth + email/password
-- [ ] Protected routes middleware
-- [ ] User session handling
+- [x] Supabase Auth: Google OAuth + email/password
+- [x] Protected routes middleware
+- [x] User session handling
 
 ### 1.3 Data Layer
-- [ ] Prisma models: Portfolio, Folder, Holding, Lot (see DATA_MODEL.md)
-- [ ] Supabase RLS policies (users see own data only)
-- [ ] DB query functions in `src/lib/db/`
-- [ ] Zod schemas for all data inputs
+- [x] Prisma models: Portfolio, Folder, Holding, Lot (see DATA_MODEL.md)
+- [x] Supabase RLS policies (users see own data only)
+- [x] DB query functions in `src/lib/db/`
+- [x] Zod schemas for all data inputs
 
 ### 1.4 Price Integration
-- [ ] `GET /api/prices` route — fetches and caches prices
-- [ ] Polygon.io client (`src/lib/api/polygon.ts`)
-- [ ] TASE DataWise client (`src/lib/api/tase.ts`)
-- [ ] `price_cache` table + TTL logic
-- [ ] USD/ILS exchange rate (`GET /api/fx`, `fx_rates` table)
+- [x] `GET /api/prices` route — fetches and caches prices
+- [x] Polygon.io client (`src/lib/api/polygon.ts`)
+- [x] TASE DataWise client (`src/lib/api/tase.ts`)
+- [x] `price_cache` table + TTL logic
+- [x] USD/ILS exchange rate (`GET /api/fx`, `fx_rates` table)
 
 ### 1.5 Calculation Engine
-- [ ] All functions in `src/lib/calculations/`
-- [ ] Unit tests with Vitest (verify against Donatello values)
-- [ ] calcCurrentValue, calcCostBasis, calcUnrealizedGains
-- [ ] calcTotalReturn, calcActualAllocationPct, calcExpenseRatio
+- [x] All functions in `src/lib/calculations/`
+- [x] Unit tests with Vitest (verify against Donatello values)
+- [x] calcCurrentValue, calcCostBasis, calcUnrealizedGains
+- [x] calcTotalReturn, calcActualAllocationPct, calcExpenseRatio
 
 ### 1.6 Home Page (Dashboard)
-- [ ] Folder tree component (recursive)
-- [ ] Holdings table (Name, Value, Gain/Return, Actual/Target)
-- [ ] KPI panel (Value, Return, Gain, Expense Ratio, Dividend Yield)
-- [ ] Donut chart (right panel, allocation breakdown)
-- [ ] Folder drill-down navigation with breadcrumb
-- [ ] "Last Updated" timestamp
+- [x] Folder tree component (recursive)
+- [x] Holdings table (Name, Value, Gain/Return, Actual/Target)
+- [x] KPI panel (Value, Return, Gain, Expense Ratio, Dividend Yield)
+- [x] Donut chart (right panel, allocation breakdown)
+- [x] Folder drill-down navigation with breadcrumb
+- [x] "Last Updated" timestamp — derived from most recent price date
 
 ### 1.7 Portfolio Management (CRUD)
-- [ ] Add folder (modal)
-- [ ] Rename folder
-- [ ] Delete folder (with confirmation, checks if empty)
-- [ ] Move folder (drag & drop or modal)
-- [ ] Add holding to folder (search by ticker symbol)
-- [ ] Delete holding
+- [x] Add folder (modal)
+- [x] Rename folder
+- [x] Delete folder (with confirmation, checks if empty)
+- [x] Move folder (drag & drop or modal)
+- [x] Add holding to folder (search by ticker symbol)
+- [x] Delete holding
 
 ### 1.8 Lot Management
-- [ ] Individual holding page (`/tickers/[symbol]`)
-- [ ] Lots table (date, shares, cost, account, folder)
-- [ ] Add new lot (inline form)
-- [ ] Delete lot
-- [ ] Mark lot as sold (partial or full)
-- [ ] Price chart for the holding (1Y, Recharts area chart)
+- [x] Individual holding page (`/tickers/[symbol]`)
+- [x] Lots table (date, shares, cost, account, folder)
+- [x] Add new lot (inline form)
+- [x] Delete lot
+- [x] Mark lot as sold (partial or full)
+- [x] Price chart for the holding (1Y, Recharts area chart)
 
 ### 1.9 Cash Accounts
-- [ ] Add ILS / USD cash account
-- [ ] Update balance
+- [x] Add ILS / USD cash account — AddCashDialog + /api/cash-accounts route
+- [ ] Update balance (edit dialog)
 - [ ] Show in holdings table
 
 ---
@@ -78,43 +78,43 @@ then layer on features. Each phase ships something usable.
 **Estimated effort:** 2 weeks
 
 ### 2.1 Target Allocations Page
-- [ ] `/allocations` page
-- [ ] Edit target % per folder (inline, auto-save)
-- [ ] Visual: donut with current vs target rings
-- [ ] Validation: total must = 100%
-- [ ] Warning badge in nav when off-target
+- [x] `/allocations` page
+- [x] Edit target % per folder (inline, auto-save)
+- [x] Visual: donut with current vs target rings
+- [x] Validation: total must = 100%
+- [x] Warning badge in nav when off-target — orange dot on Allocations tab
 
 ### 2.2 Auto-Invest Page
-- [ ] `/invest` page
-- [ ] Auto-invest algorithm (see CALCULATIONS.md §10)
-- [ ] Fractional shares toggle
-- [ ] Suggestions table
-- [ ] Manual override of allocations
+- [x] `/invest` page
+- [x] Auto-invest algorithm (see CALCULATIONS.md §10)
+- [x] Fractional shares toggle
+- [x] Suggestions table
+- [x] Manual override of allocations
 
 ### 2.3 Performance Chart
-- [ ] Indexed chart (normalized to 100) on Home page
-- [ ] Time ranges: 3M, 6M, 9M, 1Y, All
-- [ ] Benchmark comparison: S&P 500 (SPY), MSCI ACWI
-- [ ] "Simulated performance" label
-- [ ] Recharts area chart with smooth curve
+- [x] Indexed chart (normalized to 100) on Home page
+- [x] Time ranges: 3M, 6M, 9M, 1Y, All
+- [x] Benchmark comparison: S&P 500 (SPY), MSCI ACWI
+- [x] "Simulated performance" label
+- [x] Recharts area chart with smooth curve
 
 ### 2.4 Dividends Page
-- [ ] `/dividends` page
-- [ ] Annual summary panel
-- [ ] Bar chart (quarterly/monthly/yearly)
-- [ ] Breakdown toggle (by folder / by asset)
-- [ ] Recent & upcoming dividends table
-- [ ] Date picker + tax % input
-- [ ] Dividend eligibility calculation (ex-date vs purchase date)
+- [x] `/dividends` page
+- [x] Annual summary panel
+- [x] Bar chart (quarterly/monthly/yearly)
+- [x] Breakdown toggle (by folder / by asset)
+- [x] Recent & upcoming dividends table
+- [x] Date picker + tax % input
+- [x] Upcoming dividends — projected from dividend cache (frequency + last ex-date)
 
 ### 2.5 Activity Log
-- [ ] Transaction model + API
-- [ ] `/activity` page
-- [ ] Summary panel (buys, sells, cash, dividends)
-- [ ] Year + action type filters
-- [ ] Three donut charts (inflows, outflows, dividends by folder)
-- [ ] Activity log table with all transaction types
-- [ ] Auto-create transactions when lots are added/sold
+- [x] Transaction model + API
+- [x] `/activity` page
+- [x] Summary panel (buys, sells, cash, dividends)
+- [x] Year + action type filters
+- [x] Three donut charts (inflows, outflows, dividends by folder)
+- [x] Activity log table with all transaction types
+- [x] Auto-create transactions when lots are added/sold
 
 ---
 
@@ -123,29 +123,30 @@ then layer on features. Each phase ships something usable.
 **Estimated effort:** 1 week
 
 ### 3.1 Import
-- [ ] `/import` page
-- [ ] CSV parser for Donatello export format
-- [ ] Preview + confirm step
-- [ ] Error handling (invalid tickers, unknown formats)
-- [ ] Progress indicator for large imports
+- [x] `/import` page — file drop zone + preview + confirm
+- [x] JSON backup parser (full round-trip: folders → holdings → lots → cash accounts)
+- [x] Preview step (shows counts before importing)
+- [x] Error handling (bad format, invalid JSON)
+- [ ] CSV parser for Donatello export format (bank/broker statements)
 
 ### 3.2 Export
-- [ ] `/export` page
-- [ ] JSON full backup
-- [ ] CSV: Holdings, Lots, Dividends
+- [x] `/export` page
+- [x] JSON full backup (portfolio + folders + holdings + lots + cash accounts)
+- [x] CSV: Holdings, Lots, Dividends
+- [x] Import/Export links added to TopNav
 
 ### 3.3 Explore Profiles
-- [ ] `/explore` page
-- [ ] Seed noteworthy profiles (data from Donatello)
-- [ ] Profile detail view
-- [ ] "Use as Template" functionality
+- [x] `/explore` page
+- [x] Seed noteworthy profiles (data from Donatello)
+- [x] Profile detail view
+- [x] "Use as Template" functionality — POST /api/explore/[id]/use-template creates root folders with colors + target allocations
 
 ### 3.4 Production Hardening
-- [ ] Error boundaries everywhere
-- [ ] Loading skeletons for all data-heavy components
-- [ ] Empty states (new user flow)
-- [ ] Price unavailable fallback (show last known + warning)
-- [ ] Rate limit handling for Polygon.io
+- [x] Error boundary (`error.tsx`) — catches dashboard-level errors with friendly UI
+- [x] Loading skeleton (`loading.tsx`) — matches dashboard layout
+- [x] Empty states — HoldingsTree, PerformanceChart, AllocationDonut
+- [x] Price unavailable fallback — stale multi-day cache + `unavailable` flag in API response
+- [x] Rate limit handling for Polygon.io — retry with exponential backoff (1 s → 2 s → 4 s), respects Retry-After header
 - [ ] Vercel deployment
 - [ ] Basic monitoring (Vercel Analytics)
 
@@ -218,10 +219,25 @@ then layer on features. Each phase ships something usable.
 
 | Phase | Status |
 |---|---|
-| Phase 1 — Core Tracker | 🔴 Not started |
-| Phase 2 — Financial Features | 🔴 Not started |
-| Phase 3 — Data & Import | 🔴 Not started |
+| Phase 1 — Core Tracker | 🟢 Complete (~95%) |
+| Phase 2 — Financial Features | 🟢 Complete (~95%) |
+| Phase 3 — Data & Import | 🟡 Mostly done (~90%) |
 | Phase 4 — AI Agents | 🔴 Not started |
 | Phase 5 — Polish | 🔴 Not started |
 
-**Next action:** Start Phase 1.1 — Project Setup
+### Remaining open items
+**Phase 1:**
+- [ ] Cash accounts: show balance in holdings table, allow balance update
+
+**Phase 2:**
+- [ ] Dividend Yield KPI on home page — requires annual dividend data per holding
+
+**Phase 3 (remaining):**
+- [ ] CSV parser for Donatello/broker bank statements
+- [ ] Vercel deployment + basic monitoring (Vercel Analytics)
+
+**Phase 4:** AI agents (infrastructure + 4 agents)
+
+**Phase 5:** Visualize (treemap done, bubble/sector/geo missing), XIRR, mobile, dark mode, multi-portfolio
+
+**Next action:** Phase 4 — AI agents

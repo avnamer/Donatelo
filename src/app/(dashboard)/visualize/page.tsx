@@ -1,6 +1,7 @@
 // Visualize page
 
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { getCurrentUser } from '@/lib/db/supabase-server'
 import { getPortfolios, getHoldingsForPortfolio } from '@/lib/db/queries'
 import { VisualizeClient } from '@/components/visualize/VisualizeClient'
@@ -16,7 +17,10 @@ export default async function VisualizePage() {
     return <div className="py-24 text-center text-muted-foreground text-sm">No portfolio found.</div>
   }
 
-  const rawHoldings = await getHoldingsForPortfolio(portfolios[0].id, user.id)
+  const cookieStore = await cookies()
+  const savedId = cookieStore.get('portfolio-id')?.value
+  const portfolio = portfolios.find((p) => p.id === savedId) ?? portfolios[0]
+  const rawHoldings = await getHoldingsForPortfolio(portfolio.id, user.id)
 
   const holdings: ServerHolding[] = rawHoldings.map((h) => ({
     id: h.id,
@@ -24,6 +28,7 @@ export default async function VisualizePage() {
     name: h.name,
     exchange: h.exchange,
     folderId: h.folderId,
+    expenseRatio: h.expenseRatio ? Number(h.expenseRatio) : null,
     folder: { name: h.folder.name, color: h.folder.color },
     lots: h.lots.map((l) => ({
       ...l,

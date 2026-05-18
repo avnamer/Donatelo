@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────
 
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { getCurrentUser } from '@/lib/db/supabase-server'
 import { getPortfolios, getTransactions, getTransactionSummary } from '@/lib/db/queries'
 import { ActivityClient } from '@/components/activity/ActivityClient'
@@ -22,7 +23,9 @@ export default async function ActivityPage() {
     )
   }
 
-  const portfolioId = portfolios[0].id
+  const cookieStore = await cookies()
+  const savedId = cookieStore.get('portfolio-id')?.value
+  const portfolioId = (portfolios.find((p) => p.id === savedId) ?? portfolios[0]).id
 
   const [txResult, summary] = await Promise.all([
     getTransactions(portfolioId, user.id, { pageSize: 50 }),

@@ -40,6 +40,10 @@ export interface PolygonDividend {
 
 // ─── Helpers ──────────────────────────────────
 
+/**
+ * Fetch from Polygon with automatic retry on 429 (rate limit).
+ * Backs off with exponential delay: 1 s → 2 s → 4 s (max 3 attempts).
+ */
 async function polygonFetch<T>(path: string, params: Record<string, string> = {}): Promise<T> {
   const url = new URL(`${BASE_URL}${path}`)
   url.searchParams.set('apiKey', API_KEY)
@@ -47,15 +51,37 @@ async function polygonFetch<T>(path: string, params: Record<string, string> = {}
     url.searchParams.set(k, v)
   }
 
-  const res = await fetch(url.toString(), {
-    next: { revalidate: 0 },  // never use Next.js cache — we manage our own
-  })
+  const MAX_ATTEMPTS = 3
+  let lastError: Error | null = null
 
-  if (!res.ok) {
-    throw new Error(`Polygon API error ${res.status}: ${path}`)
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(url.toString(), {
+      next: { revalidate: 0 },  // never use Next.js cache — we manage our own
+    })
+
+    if (res.status === 429) {
+      // Respect Retry-After header if present, else exponential backoff
+      const retryAfter = res.headers.get('Retry-After')
+      const delayMs = retryAfter
+        ? parseFloat(retryAfter) * 1000
+        : Math.pow(2, attempt) * 1000   // 1 s, 2 s, 4 s
+
+      lastError = new Error(`Polygon rate limited (429): ${path}`)
+      if (attempt < MAX_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, delayMs))
+        continue
+      }
+      throw lastError
+    }
+
+    if (!res.ok) {
+      throw new Error(`Polygon API error ${res.status}: ${path}`)
+    }
+
+    return res.json() as Promise<T>
   }
 
-  return res.json() as Promise<T>
+  throw lastError ?? new Error(`Polygon fetch failed: ${path}`)
 }
 
 /** Convert a USD dollar amount to cents (integer). */
@@ -173,15 +199,15 @@ export async function fetchUSDividends(
   }>
 > {
   try {
-    const oneYearAgo = new Date()
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+    const threeYearsAgo = new Date()
+    threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3)
 
     const data = await polygonFetch<{ results?: PolygonDividend[] }>(
       `/v3/reference/dividends`,
       {
         ticker,
-        'ex_dividend_date.gte': toPolygonDate(oneYearAgo),
-        limit: '50',
+        'ex_dividend_date.gte': toPolygonDate(threeYearsAgo),
+        limit: '100',
         sort: 'ex_dividend_date',
         order: 'desc',
       }

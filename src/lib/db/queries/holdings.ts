@@ -214,6 +214,43 @@ export async function sellLot(
 }
 
 /**
+ * Edit an existing lot's purchase details.
+ */
+export async function editLot(
+  lotId: string,
+  userId: string,
+  data: {
+    purchaseDate: Date
+    shares: number
+    costPerShare: bigint
+    costCurrency: string
+    accountType?: string
+    notes?: string
+  }
+) {
+  const lot = await prisma.lot.findFirst({
+    where: {
+      id: lotId,
+      holding: { folder: { portfolio: { userId } } },
+    },
+    select: { id: true },
+  })
+  if (!lot) return null
+
+  return prisma.lot.update({
+    where: { id: lotId },
+    data: {
+      purchaseDate: data.purchaseDate,
+      shares: new Prisma.Decimal(data.shares),
+      costPerShare: data.costPerShare,
+      costCurrency: data.costCurrency,
+      accountType: data.accountType ?? null,
+      notes: data.notes ?? null,
+    },
+  })
+}
+
+/**
  * Delete a lot (only allowed if no transactions reference it).
  */
 export async function deleteLot(lotId: string, userId: string) {

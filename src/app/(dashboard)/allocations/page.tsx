@@ -1,12 +1,13 @@
 // ─────────────────────────────────────────────
-// Allocations page — set target % per folder
+// Allocations page — drill-down target allocation editor
 // ─────────────────────────────────────────────
 
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { getCurrentUser } from '@/lib/db/supabase-server'
 import { getPortfolios, getPortfolioWithStructure, getHoldingsForPortfolio } from '@/lib/db/queries'
 import { AllocationsClient } from '@/components/allocations/AllocationsClient'
-import { saveTargetAllocation } from '@/app/actions/allocations'
+import { saveTargetAllocation, saveHoldingTargetAllocation } from '@/app/actions/allocations'
 import type { ServerHolding } from '@/hooks/usePortfolio'
 import type { Lot } from '@/types'
 
@@ -23,27 +24,36 @@ export default async function AllocationsPage() {
     )
   }
 
-  const portfolio = await getPortfolioWithStructure(portfolios[0].id, user.id)
+  const cookieStore = await cookies()
+  const savedId = cookieStore.get('portfolio-id')?.value
+  const selectedPortfolio = portfolios.find((p) => p.id === savedId) ?? portfolios[0]
+  const portfolio = await getPortfolioWithStructure(selectedPortfolio.id, user.id)
   if (!portfolio) redirect('/')
 
-  const rawHoldings = await getHoldingsForPortfolio(portfolios[0].id, user.id)
+  const rawHoldings = await getHoldingsForPortfolio(selectedPortfolio.id, user.id)
 
-  const folders = portfolio.folders.map((f) => ({
+  // All folders (root + subfolders) with parentId for tree building
+  const allFolders = portfolio.folders.map((f) => ({
     id: f.id,
     name: f.name,
     color: f.color,
+    parentId: f.parentId,
     targetPct: f.targetAllocationPct ? Number(f.targetAllocationPct) : 0,
-    currentValue: 0n, // computed client-side via metrics
-    currentPct: 0,    // computed client-side
   }))
 
+  // Holdings with parentId so usePortfolioMetrics resolves rootFolderId correctly
   const holdings: ServerHolding[] = rawHoldings.map((h) => ({
     id: h.id,
     tickerSymbol: h.tickerSymbol,
     name: h.name,
     exchange: h.exchange,
     folderId: h.folderId,
-    folder: { name: h.folder.name, color: h.folder.color },
+    expenseRatio: h.expenseRatio ? Number(h.expenseRatio) : null,
+    folder: {
+      name: h.folder.name,
+      color: h.folder.color,
+      parentId: h.folder.parentId,
+    },
     lots: h.lots.map((l) => ({
       ...l,
       shares: Number(l.shares),
@@ -51,13 +61,24 @@ export default async function AllocationsPage() {
     })) as unknown as Lot[],
   }))
 
+  // Initial target % per holding (0 if unset)
+  const holdingTargets: Record<string, number> = {}
+  for (const h of rawHoldings) {
+    holdingTargets[h.id] = h.targetAllocationPct ? Number(h.targetAllocationPct) : 0
+  }
+
   return (
     <AllocationsClient
-      folders={folders}
+      allFolders={allFolders}
       holdings={holdings}
-      onSave={async (folderId, targetPct) => {
+      holdingTargets={holdingTargets}
+      onSaveFolder={async (folderId, targetPct) => {
         'use server'
         await saveTargetAllocation(folderId, targetPct)
+      }}
+      onSaveHolding={async (holdingId, targetPct) => {
+        'use server'
+        await saveHoldingTargetAllocation(holdingId, targetPct)
       }}
     />
   )

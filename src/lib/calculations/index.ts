@@ -320,7 +320,93 @@ export function calcIndexedPerformance(
   }))
 }
 
-// ─── 11. Formatting Helpers ─────────────────
+// ─── 11. XIRR ───────────────────────────────
+
+export interface XirrCashFlow {
+  date: Date
+  amount: number  // negative = outflow (purchase), positive = inflow (proceeds/current value)
+}
+
+/**
+ * Extended IRR: annualised return accounting for the timing of cash flows.
+ * Returns the annual rate as a percentage (e.g. 12.5 means 12.5% per year),
+ * or null if the calculation doesn't converge or there aren't enough data points.
+ *
+ * Uses Newton-Raphson iteration to solve:
+ *   sum( CF_i / (1+r)^t_i ) = 0
+ * where t_i = years from the first cash flow.
+ */
+export function calcXIRR(cashFlows: XirrCashFlow[]): number | null {
+  if (cashFlows.length < 2) return null
+
+  const sorted = [...cashFlows].sort((a, b) => a.date.getTime() - b.date.getTime())
+  const t0 = sorted[0].date.getTime()
+  const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000
+  const years = sorted.map((cf) => (cf.date.getTime() - t0) / MS_PER_YEAR)
+  const amounts = sorted.map((cf) => cf.amount)
+
+  function npv(r: number): number {
+    return amounts.reduce((sum, cf, i) => sum + cf / Math.pow(1 + r, years[i]), 0)
+  }
+
+  function dnpv(r: number): number {
+    return amounts.reduce(
+      (sum, cf, i) => sum - (years[i] * cf) / Math.pow(1 + r, years[i] + 1),
+      0
+    )
+  }
+
+  let r = 0.1
+  for (let iter = 0; iter < 200; iter++) {
+    const fr = npv(r)
+    const dfr = dnpv(r)
+    if (Math.abs(dfr) < 1e-12) break
+    const rNew = r - fr / dfr
+    if (Math.abs(rNew - r) < 1e-10) return rNew * 100
+    r = rNew
+    if (r <= -1) return null  // rate can't be below -100%
+  }
+
+  return null  // did not converge
+}
+
+/**
+ * Build XIRR cash flows from portfolio lots + current value.
+ * All amounts are in the same currency (already converted by caller).
+ */
+export function buildXirrCashFlows(
+  lots: Lot[],
+  currentValue: bigint,
+  baseCurrency: 'ILS' | 'USD',
+  fxRateUsdToIls: number
+): XirrCashFlow[] {
+  const flows: XirrCashFlow[] = []
+
+  for (const lot of lots) {
+    const purchaseCost = lot.shares * Number(lot.costPerShare)
+    const costInBase = lot.costCurrency === baseCurrency
+      ? purchaseCost
+      : lot.costCurrency === 'USD' && baseCurrency === 'ILS'
+        ? purchaseCost * fxRateUsdToIls
+        : purchaseCost / fxRateUsdToIls
+
+    flows.push({ date: new Date(lot.purchaseDate), amount: -costInBase / 100 })
+
+    if (lot.soldShares > 0 && lot.proceedsFromSale && lot.soldDate) {
+      flows.push({
+        date: new Date(lot.soldDate),
+        amount: Number(lot.proceedsFromSale) / 100,
+      })
+    }
+  }
+
+  // Current portfolio value as final inflow today
+  flows.push({ date: new Date(), amount: Number(currentValue) / 100 })
+
+  return flows
+}
+
+// ─── 12. Formatting Helpers ─────────────────
 
 export function formatCurrency(
   value: bigint,

@@ -32,7 +32,7 @@ export async function getCachedPrice(
 export async function getCachedPrices(
   tickers: string[],
   maxAgeMinutes = 60
-): Promise<Map<string, { price: bigint; currency: string; priceDate: Date }>> {
+): Promise<Map<string, { price: bigint; currency: string; priceDate: Date; fetchedAt: Date }>> {
   if (tickers.length === 0) return new Map()
 
   const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000)
@@ -50,6 +50,7 @@ export async function getCachedPrices(
       price: true,
       currency: true,
       priceDate: true,
+      fetchedAt: true,
     },
   })
 
@@ -130,6 +131,32 @@ export async function getTrailingDividends(tickerSymbol: string) {
       amountPerShare: true,
       currency: true,
       frequency: true,
+    },
+  })
+}
+
+/**
+ * All dividend events for a ticker from the past 3 years + upcoming.
+ * Used for the Dividends page full schedule.
+ */
+export async function getDividendHistory(tickerSymbol: string) {
+  const threeYearsAgo = new Date()
+  threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3)
+
+  return prisma.dividendCache.findMany({
+    where: {
+      tickerSymbol,
+      exDate: { gte: threeYearsAgo },
+    },
+    orderBy: { exDate: 'desc' },
+    select: {
+      exDate: true,
+      declareDate: true,
+      payDate: true,
+      amountPerShare: true,
+      currency: true,
+      frequency: true,
+      fetchedAt: true,
     },
   })
 }

@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────
 
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { getCurrentUser } from '@/lib/db/supabase-server'
 import { getPortfolios, getPortfolioWithStructure } from '@/lib/db/queries'
 import { InvestClient } from '@/components/invest/InvestClient'
@@ -20,7 +21,10 @@ export default async function InvestPage() {
     )
   }
 
-  const portfolio = await getPortfolioWithStructure(portfolios[0].id, user.id)
+  const cookieStore = await cookies()
+  const savedId = cookieStore.get('portfolio-id')?.value
+  const selectedPortfolio = portfolios.find((p) => p.id === savedId) ?? portfolios[0]
+  const portfolio = await getPortfolioWithStructure(selectedPortfolio.id, user.id)
   if (!portfolio) redirect('/')
 
   // Shape data for the client

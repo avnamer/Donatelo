@@ -23,6 +23,7 @@ import { fetchLatestTasePrice } from '@/lib/api/tase'
 
 const QuerySchema = z.object({
   tickers: z.string().min(1),
+  force: z.enum(['true', 'false']).optional(),
 })
 
 // ─── Types ────────────────────────────────────
@@ -32,6 +33,7 @@ interface PriceResult {
   currency: string
   date: string
   stale: boolean   // true if older than 60 min
+  unavailable?: boolean  // true if no price found at all
 }
 
 // ─── Handler ──────────────────────────────────
@@ -57,9 +59,10 @@ export async function GET(request: NextRequest) {
   })
 
   const symbols = tickerEntries.map((t) => t.symbol)
+  const forceRefresh = parsed.data.force === 'true'
 
-  // 1. Check cache (60-min TTL)
-  const cached = await getCachedPrices(symbols, 60)
+  // 1. Check cache (60-min TTL) — skip when force=true
+  const cached = forceRefresh ? new Map() : await getCachedPrices(symbols, 60)
 
   // 2. Find what's missing / stale
   const toFetch = tickerEntries.filter((t) => !cached.has(t.symbol))
@@ -85,13 +88,23 @@ export async function GET(request: NextRequest) {
             price: result.price,
             currency: result.currency,
             priceDate: result.date,
+            fetchedAt: new Date(),
           })
         }
       })
     )
   }
 
-  // 4. Build response
+  // 4. Fallback: for symbols still missing, try any cached price regardless of age
+  const stillMissing = tickerEntries.filter((t) => !cached.has(t.symbol))
+  if (stillMissing.length > 0) {
+    const anyCached = await getCachedPrices(stillMissing.map((t) => t.symbol), 60 * 24 * 30)
+    for (const [symbol, entry] of anyCached) {
+      cached.set(symbol, entry)
+    }
+  }
+
+  // 5. Build response
   const now = Date.now()
   const STALE_MS = 60 * 60 * 1000  // 60 minutes
 
@@ -103,7 +116,16 @@ export async function GET(request: NextRequest) {
         price: entry.price.toString(),
         currency: entry.currency,
         date: entry.priceDate.toISOString(),
-        stale: now - entry.priceDate.getTime() > STALE_MS,
+        stale: now - entry.fetchedAt.getTime() > STALE_MS,
+      }
+    } else {
+      // No price anywhere — signal to the client so it can show "—" instead of a wrong value
+      result[symbol] = {
+        price: '0',
+        currency: 'ILS',
+        date: new Date().toISOString(),
+        stale: true,
+        unavailable: true,
       }
     }
   }

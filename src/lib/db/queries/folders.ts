@@ -120,6 +120,39 @@ export async function deleteFolder(folderId: string, userId: string) {
   return prisma.folder.delete({ where: { id: folderId } })
 }
 
+/**
+ * Get a single folder with parent info (for breadcrumb and folder page).
+ */
+export async function getFolderById(folderId: string, userId: string) {
+  return prisma.folder.findFirst({
+    where: { id: folderId, portfolio: { userId } },
+    select: {
+      id: true,
+      portfolioId: true,
+      parentId: true,
+      name: true,
+      color: true,
+      targetAllocationPct: true,
+      sortOrder: true,
+      isHiddenWhenShared: true,
+      createdAt: true,
+      parent: {
+        select: { id: true, name: true, parentId: true },
+      },
+      children: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          targetAllocationPct: true,
+          parentId: true,
+        },
+        orderBy: { sortOrder: 'asc' },
+      },
+    },
+  })
+}
+
 // ─── Tree assembler ───────────────────────────
 
 export type FolderNode = FolderRow & { children: FolderNode[] }

@@ -7,7 +7,7 @@ import { ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react'
 import { usePortfolioMetrics } from '@/hooks/usePortfolio'
 import { formatCurrency, formatPercent } from '@/lib/calculations'
 import { useUIStore } from '@/store/ui'
-import { cn } from '@/lib/utils'
+import { cn, formatHoldingDuration } from '@/lib/utils'
 import { AddHoldingDialog } from './AddHoldingDialog'
 import { RenameFolderDialog } from './RenameFolderDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -37,11 +37,12 @@ interface FolderPageClientProps {
   folder: SerializedFolder
   holdings: ServerHolding[]
   folders: FolderRow[]
+  holdingTargets?: Record<string, number>
 }
 
 // ─── Component ────────────────────────────────
 
-export function FolderPageClient({ folder, holdings, folders }: FolderPageClientProps) {
+export function FolderPageClient({ folder, holdings, folders, holdingTargets = {} }: FolderPageClientProps) {
   const router = useRouter()
   const currency = useUIStore((s) => s.currency)
   const metrics = usePortfolioMetrics(holdings, buildFolderMap(folders))
@@ -175,6 +176,8 @@ export function FolderPageClient({ folder, holdings, folders }: FolderPageClient
                   const childReturn = childCost > 0n ? Number(childGains) / Number(childCost) * 100 : 0
                   const childAlloc = totalValue > 0n ? Number(childValue) / Number(totalValue) * 100 : 0
                   const childPositive = childGains >= 0n
+                  const childTarget = child.targetAllocationPct
+                  const childGap = childTarget != null ? childAlloc - childTarget : null
 
                   return (
                     <tr
@@ -206,8 +209,20 @@ export function FolderPageClient({ folder, holdings, folders }: FolderPageClient
                           <span className="text-xs">{formatPercent(childReturn, 1)}</span>
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-sm text-muted-foreground">
-                        {childAlloc.toFixed(1)}%
+                      <td className="py-2.5 px-3 text-right tabular-nums text-sm">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-muted-foreground">{childAlloc.toFixed(1)}%</span>
+                          {childTarget != null && (
+                            <span className="text-[10px] text-muted-foreground/60">
+                              {childTarget.toFixed(1)}% target{' '}
+                              {childGap != null && Math.abs(childGap) >= 0.5 && (
+                                <span className={childGap > 0 ? 'text-gain' : 'text-loss'}>
+                                  ({childGap > 0 ? '+' : ''}{childGap.toFixed(1)}%)
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -253,6 +268,14 @@ export function FolderPageClient({ folder, holdings, folders }: FolderPageClient
               {directHoldings.map((h) => {
                 const hPositive = h.unrealizedGains >= 0n
                 const hAlloc = totalValue > 0n ? Number(h.currentValue) / Number(totalValue) * 100 : 0
+                const hTarget = holdingTargets[h.holdingId] ?? 0
+                const hGap = hTarget > 0 ? hAlloc - hTarget : null
+
+                const oldestLot = h.lots.reduce<Date | null>((min, lot) => {
+                  const d = new Date(lot.purchaseDate)
+                  return min === null || d < min ? d : min
+                }, null)
+                const duration = oldestLot ? formatHoldingDuration(oldestLot) : null
 
                 return (
                   <tr key={h.holdingId} className="border-b last:border-0 hover:bg-muted/20 transition-colors group">
@@ -276,10 +299,27 @@ export function FolderPageClient({ folder, holdings, folders }: FolderPageClient
                       <div className="flex flex-col items-end">
                         <span>{formatCurrency(h.unrealizedGains, currency)}</span>
                         <span className="text-xs">{formatPercent(h.unrealizedReturnPct, 1)}</span>
+                        {duration && (
+                          <span className="text-xs text-muted-foreground font-normal mt-0.5">
+                            {duration}
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums text-sm text-muted-foreground">
-                      {hAlloc.toFixed(1)}%
+                    <td className="py-2 px-3 text-right tabular-nums text-sm">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-muted-foreground">{hAlloc.toFixed(1)}%</span>
+                        {hTarget > 0 && (
+                          <span className="text-[10px] text-muted-foreground/60">
+                            {hTarget.toFixed(1)}% target{' '}
+                            {hGap != null && Math.abs(hGap) >= 0.5 && (
+                              <span className={hGap > 0 ? 'text-gain' : 'text-loss'}>
+                                ({hGap > 0 ? '+' : ''}{hGap.toFixed(1)}%)
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2 px-3 w-10">
                       <button

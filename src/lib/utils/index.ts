@@ -64,6 +64,22 @@ export function safeParseFloat(value: string | undefined | null): number {
   return isNaN(n) ? 0 : n
 }
 
+/**
+ * Returns a human-readable holding duration from the oldest purchase date to today.
+ * Examples: "3m", "1y", "2y 4m"
+ */
+export function formatHoldingDuration(oldestPurchaseDate: Date, today: Date = new Date()): string {
+  let years  = today.getFullYear() - oldestPurchaseDate.getFullYear()
+  let months = today.getMonth()    - oldestPurchaseDate.getMonth()
+
+  if (months < 0) { years--; months += 12 }
+
+  if (years === 0 && months === 0) return '< 1m'
+  if (years === 0) return `${months}m`
+  if (months === 0) return `${years}y`
+  return `${years}y ${months}m`
+}
+
 export function getTimeRangeCutoff(timeRange: TimeRange, today: Date = new Date()): Date {
   const d = new Date(today)
   switch (timeRange) {

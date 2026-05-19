@@ -75,10 +75,20 @@ Respond: { "trend": "bullish|bearish|neutral", "trendReason": "one sentence expl
   })
 
   const text = message.content[0]?.type === 'text' ? message.content[0].text : null
-  if (!text) return null
+  if (!text) {
+    return {
+      tickerSymbol: holding.tickerSymbol,
+      exchange: holding.exchange,
+      priceChangePct,
+      currentPriceCents,
+      trend: priceChangePct > 0 ? 'bullish' : 'bearish',
+      trendReason: `Moved ${priceChangePct.toFixed(1)}% in 30 days.`,
+    }
+  }
 
   try {
-    const parsed = JSON.parse(text) as { trend: MarketUpdate['trend']; trendReason: string }
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const parsed = JSON.parse(cleaned) as { trend: MarketUpdate['trend']; trendReason: string }
     return {
       tickerSymbol: holding.tickerSymbol,
       exchange: holding.exchange,

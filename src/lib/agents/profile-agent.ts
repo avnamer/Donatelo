@@ -9,40 +9,48 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function evaluateTheses(
   theses: HoldingThesis[],
-  marketUpdates: MarketUpdate[]
+  marketUpdates: MarketUpdate[],
+  tickerByHoldingId: Map<string, string>
 ): Promise<ThesisEvaluation[]> {
   if (theses.length === 0) return []
 
-  const updatesByTicker = Object.fromEntries(
-    marketUpdates.map((u) => [u.tickerSymbol, u])
-  )
+  const updatesByTicker = Object.fromEntries(marketUpdates.map((u) => [u.tickerSymbol, u]))
 
   const results = await Promise.allSettled(
-    theses.map((thesis) => evaluateSingleThesis(thesis, updatesByTicker[thesis.holdingId] ?? null))
+    theses.map((thesis) => {
+      const ticker = tickerByHoldingId.get(thesis.holdingId) ?? thesis.holdingId
+      const update = updatesByTicker[ticker] ?? null
+      return evaluateSingleThesis(thesis, update, ticker)
+    })
   )
 
   return results
-    .filter((r): r is PromiseFulfilledResult<ThesisEvaluation> => r.status === 'fulfilled')
-    .map((r) => r.value)
+    .map((r) => {
+      if (r.status === 'fulfilled') return r.value
+      return null
+    })
+    .filter((v): v is ThesisEvaluation => v !== null)
 }
 
 async function evaluateSingleThesis(
   thesis: HoldingThesis,
-  marketUpdate: MarketUpdate | null
+  marketUpdate: MarketUpdate | null,
+  ticker: string
 ): Promise<ThesisEvaluation> {
-  const marketContext = marketUpdate
-    ? `Current market: ${marketUpdate.trend} trend, ${marketUpdate.priceChangePct.toFixed(1)}% change over 30 days. ${marketUpdate.trendReason}`
-    : 'No recent market data available.'
+  try {
+    const marketContext = marketUpdate
+      ? `Current market: ${marketUpdate.trend} trend, ${marketUpdate.priceChangePct.toFixed(1)}% change over 30 days. ${marketUpdate.trendReason}`
+      : 'No recent market data available.'
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 250,
-    system:
-      'You are an investment psychology expert. Evaluate whether an investor\'s thesis is still valid. Respond ONLY with valid JSON.',
-    messages: [
-      {
-        role: 'user',
-        content: `Investment thesis for ${thesis.holdingId}:
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 250,
+      system:
+        'You are an investment psychology expert. Evaluate whether an investor\'s thesis is still valid. Respond ONLY with valid JSON.',
+      messages: [
+        {
+          role: 'user',
+          content: `Investment thesis for ${ticker}:
 "${thesis.thesis}"
 Catalysts: ${thesis.catalysts.join(', ') || 'none stated'}
 Risk factors: ${thesis.riskFactors.join(', ') || 'none stated'}
@@ -51,30 +59,30 @@ Horizon: ${thesis.horizon ?? 'unspecified'}
 ${marketContext}
 
 Respond: { "thesisIntact": true/false, "explanation": "2 sentences", "recommendation": "hold|review|rebalance" }`,
-      },
-    ],
-  })
+        },
+      ],
+    })
 
-  const text = message.content[0]?.type === 'text' ? message.content[0].text : null
-  if (!text) {
-    return {
-      holdingId: thesis.holdingId,
-      tickerSymbol: thesis.holdingId,
-      thesisIntact: true,
-      explanation: 'Could not evaluate — no response from AI.',
-      recommendation: 'hold',
+    const text = message.content[0]?.type === 'text' ? message.content[0].text : null
+    if (!text) {
+      return {
+        holdingId: thesis.holdingId,
+        tickerSymbol: ticker,
+        thesisIntact: true,
+        explanation: 'Could not evaluate — no response from AI.',
+        recommendation: 'hold',
+      }
     }
-  }
 
-  try {
-    const parsed = JSON.parse(text) as {
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const parsed = JSON.parse(cleaned) as {
       thesisIntact: boolean
       explanation: string
       recommendation: ThesisEvaluation['recommendation']
     }
     return {
       holdingId: thesis.holdingId,
-      tickerSymbol: thesis.holdingId,
+      tickerSymbol: ticker,
       thesisIntact: parsed.thesisIntact,
       explanation: parsed.explanation,
       recommendation: parsed.recommendation,
@@ -82,9 +90,9 @@ Respond: { "thesisIntact": true/false, "explanation": "2 sentences", "recommenda
   } catch {
     return {
       holdingId: thesis.holdingId,
-      tickerSymbol: thesis.holdingId,
+      tickerSymbol: ticker,
       thesisIntact: true,
-      explanation: 'Evaluation parse error — thesis assumed intact.',
+      explanation: 'Evaluation failed — thesis assumed intact.',
       recommendation: 'hold',
     }
   }

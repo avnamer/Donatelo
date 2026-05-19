@@ -38,7 +38,7 @@ export function runRebalancingAgent(folders: FolderInput[]): DriftResult {
 
   return {
     drifts,
-    hasWarnings: drifts.some((d) => Math.abs(d.driftPct) >= DRIFT_WARNING_THRESHOLD),
+    hasWarnings: drifts.length > 0,
     hasAlerts: drifts.some((d) => Math.abs(d.driftPct) >= DRIFT_ALERT_THRESHOLD),
   }
 }

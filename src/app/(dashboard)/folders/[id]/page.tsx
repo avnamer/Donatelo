@@ -41,6 +41,12 @@ export default async function FolderPage({ params }: PageProps) {
     })) as unknown as Lot[],
   }))
 
+  // Target allocation per holding (from DB) — shown alongside actual % in folder view
+  const holdingTargets: Record<string, number> = {}
+  for (const h of rawHoldings) {
+    holdingTargets[h.id] = h.targetAllocationPct ? Number(h.targetAllocationPct) : 0
+  }
+
   const serializedFolder = {
     id: folder.id,
     portfolioId: folder.portfolioId,
@@ -66,6 +72,7 @@ export default async function FolderPage({ params }: PageProps) {
       folder={serializedFolder}
       holdings={holdings}
       folders={serializedFolders as any}
+      holdingTargets={holdingTargets}
     />
   )
 }

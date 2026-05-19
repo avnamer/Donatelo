@@ -286,6 +286,9 @@ export function AllocationsClient({
   const rootTotal = rootFolders.reduce((s, f) => s + (folderTargets[f.id] ?? 0), 0)
   const rootTotalOk = Math.abs(rootTotal - 100) < 0.01
 
+  // True when at least one root folder is open — used to dim the others
+  const anyRootExpanded = rootFolders.some((f) => expanded.has(f.id))
+
   // ── Render ──────────────────────────────────
 
   return (
@@ -365,8 +368,14 @@ export function AllocationsClient({
                   {/* ── Root folder row ─────────────────── */}
                   <tr
                     className={cn(
-                      'border-b hover:bg-muted/20 transition-colors',
-                      hasChildren && 'cursor-pointer'
+                      'border-b transition-all duration-200',
+                      hasChildren && 'cursor-pointer',
+                      // When this folder is expanded: subtle highlight to anchor the open section
+                      isExpanded && 'bg-muted/[0.08]',
+                      // When another folder is expanded: dim this one
+                      anyRootExpanded && !isExpanded
+                        ? 'opacity-40 hover:opacity-70'
+                        : 'hover:bg-muted/20'
                     )}
                     onClick={() => hasChildren && toggleExpand(folder.id)}
                   >

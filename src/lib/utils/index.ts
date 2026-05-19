@@ -65,8 +65,7 @@ export function safeParseFloat(value: string | undefined | null): number {
 }
 
 /**
- * Returns a human-readable holding duration from the oldest purchase date to today.
- * Examples: "3m", "1y", "2y 4m"
+ * Returns a compact holding duration. Examples: "3m", "1y", "2y 4m"
  */
 export function formatHoldingDuration(oldestPurchaseDate: Date, today: Date = new Date()): string {
   let years  = today.getFullYear() - oldestPurchaseDate.getFullYear()
@@ -78,6 +77,42 @@ export function formatHoldingDuration(oldestPurchaseDate: Date, today: Date = ne
   if (years === 0) return `${months}m`
   if (months === 0) return `${years}y`
   return `${years}y ${months}m`
+}
+
+/**
+ * Returns a full-word holding duration. Examples: "3 months", "1 year", "2 years 4 months"
+ */
+export function formatHoldingDurationLong(date: Date, today: Date = new Date()): string {
+  let years  = today.getFullYear() - date.getFullYear()
+  let months = today.getMonth()    - date.getMonth()
+
+  if (months < 0) { years--; months += 12 }
+
+  const y = years  === 1 ? '1 year'   : years  > 1 ? `${years} years`   : ''
+  const m = months === 1 ? '1 month'  : months > 1 ? `${months} months` : ''
+
+  if (!y && !m) return '< 1 month'
+  return [y, m].filter(Boolean).join(' ')
+}
+
+/**
+ * Annualized return (CAGR) from a total return % and the oldest purchase date.
+ * Returns null when the holding is too short (<1 month) or data is invalid.
+ *
+ * Formula: CAGR = (1 + totalReturn)^(1/years) − 1
+ */
+export function calcAnnualizedReturn(
+  totalReturnPct: number,
+  oldestPurchaseDate: Date,
+  today: Date = new Date()
+): number | null {
+  const ms    = today.getTime() - oldestPurchaseDate.getTime()
+  const years = ms / (365.25 * 24 * 60 * 60 * 1000)
+
+  if (years < 1 / 12) return null          // < 1 month — meaningless to annualize
+  if (1 + totalReturnPct / 100 <= 0) return null  // can't root a negative growth
+
+  return (Math.pow(1 + totalReturnPct / 100, 1 / years) - 1) * 100
 }
 
 export function getTimeRangeCutoff(timeRange: TimeRange, today: Date = new Date()): Date {

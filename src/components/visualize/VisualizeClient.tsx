@@ -3,9 +3,10 @@
 import { useState, useMemo } from 'react'
 import { Treemap, ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from 'recharts'
 import { usePortfolioMetrics } from '@/hooks/usePortfolio'
+import { usePriceHistory } from '@/hooks/usePriceHistory'
 import { formatCurrency, formatPercent, calcActualAllocationPct } from '@/lib/calculations'
 import { useUIStore } from '@/store/ui'
-import { cn } from '@/lib/utils'
+import { cn, formatHoldingDurationLong, calcAnnualizedReturn } from '@/lib/utils'
 import type { ServerHolding } from '@/hooks/usePortfolio'
 
 // ─── Tabs ─────────────────────────────────────
@@ -17,6 +18,22 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'sector',     label: 'By Folder' },
   { id: 'geographic', label: 'Geographic' },
 ]
+
+// ─── Period filter ────────────────────────────
+
+type Period = '1w' | '1m' | '6m' | '1y' | 'all'
+const PERIODS: { id: Period; label: string }[] = [
+  { id: '1w',  label: 'Week' },
+  { id: '1m',  label: 'Month' },
+  { id: '6m',  label: '6 Months' },
+  { id: '1y',  label: 'Year' },
+  { id: 'all', label: 'All Time' },
+]
+
+// "all" → null (no history API needed); others → passed to usePriceHistory
+function toHistoryPeriod(period: Period): string | null {
+  return period === 'all' ? null : period
+}
 
 // ─── Color palette ────────────────────────────
 
@@ -40,8 +57,9 @@ function returnColor(pct: number): string {
 function TreemapContent(props: {
   x?: number; y?: number; width?: number; height?: number
   name?: string; value?: number; unrealizedReturnPct?: number
+  duration?: string; annualizedReturn?: number | null
 }) {
-  const { x = 0, y = 0, width = 0, height = 0, name, unrealizedReturnPct = 0 } = props
+  const { x = 0, y = 0, width = 0, height = 0, name, unrealizedReturnPct = 0, duration, annualizedReturn } = props
   if (width < 30 || height < 20) return null
 
   return (
@@ -63,8 +81,55 @@ function TreemapContent(props: {
           {unrealizedReturnPct >= 0 ? '+' : ''}{unrealizedReturnPct.toFixed(1)}%
         </text>
       )}
+      {height > 72 && duration && (
+        <text x={x + 8} y={y + 48} fill="#ffffffaa" fontSize={10}>
+          {duration}
+          {annualizedReturn != null
+            ? `  ·  ${annualizedReturn >= 0 ? '+' : ''}${annualizedReturn.toFixed(1)}%/yr`
+            : ''}
+        </text>
+      )}
     </g>
   )
+}
+
+// Always shows ALL holdings.
+// Block SIZE  = full current value (all lots).
+// Block COLOR = price-change % over the selected period (Yahoo Finance).
+//               Holdings with no historical data fall back to all-time unrealized return.
+function TreemapSection({ holdings, period }: { holdings: ServerHolding[]; period: Period }) {
+  const metrics = usePortfolioMetrics(holdings)
+
+  // Build ticker list in the format the history API expects
+  const tickers = useMemo(
+    () => metrics.holdings.map(
+      (h) => `${h.tickerSymbol}:${h.exchange === 'TASE' ? 'TASE' : 'US'}`
+    ),
+    [metrics.holdings]
+  )
+
+  const historyPeriod = toHistoryPeriod(period)
+  const { data: periodReturns = {}, isLoading: historyLoading } = usePriceHistory(tickers, historyPeriod)
+
+  const isLoading = metrics.pricesLoading || (period !== 'all' && historyLoading)
+
+  if (isLoading) {
+    return (
+      <div className="h-80 flex items-center justify-center text-muted-foreground text-sm">
+        Loading prices…
+      </div>
+    )
+  }
+
+  // Merge: size = full current value, color = period return (fallback to all-time)
+  const mergedHoldings = metrics.holdings.map((h) => {
+    if (period === 'all') return h
+    const periodPct = periodReturns[h.tickerSymbol]
+    if (periodPct == null) return h  // no historical data → show all-time return
+    return { ...h, unrealizedReturnPct: periodPct }
+  })
+
+  return <TreemapView holdings={mergedHoldings} />
 }
 
 function TreemapView({ holdings }: { holdings: ReturnType<typeof usePortfolioMetrics>['holdings'] }) {
@@ -72,12 +137,25 @@ function TreemapView({ holdings }: { holdings: ReturnType<typeof usePortfolioMet
 
   const data = holdings
     .filter((h) => h.currentValue > 0n)
-    .map((h) => ({
-      name: h.tickerSymbol,
-      value: Number(h.currentValue),
-      unrealizedReturnPct: h.unrealizedReturnPct,
-      currentValue: h.currentValue,
-    }))
+    .map((h) => {
+      const oldestLot = h.lots.reduce<Date | null>((min, lot) => {
+        const d = new Date(lot.purchaseDate)
+        return min === null || d < min ? d : min
+      }, null)
+      const duration        = oldestLot ? formatHoldingDurationLong(oldestLot) : undefined
+      const annualizedReturn = oldestLot
+        ? calcAnnualizedReturn(h.unrealizedReturnPct, oldestLot)
+        : null
+
+      return {
+        name: h.name,
+        value: Number(h.currentValue),
+        unrealizedReturnPct: h.unrealizedReturnPct,
+        currentValue: h.currentValue,
+        duration,
+        annualizedReturn,
+      }
+    })
 
   if (data.length === 0) {
     return (
@@ -95,12 +173,27 @@ function TreemapView({ holdings }: { holdings: ReturnType<typeof usePortfolioMet
             if (!payload?.[0]) return null
             const d = payload[0].payload
             return (
-              <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-sm">
+              <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-sm space-y-0.5">
                 <p className="font-semibold">{d.name}</p>
-                <p className="tabular-nums">{formatCurrency(BigInt(d.currentValue), currency)}</p>
+                <p className="tabular-nums text-muted-foreground">
+                  {formatCurrency(BigInt(d.currentValue), currency)}
+                </p>
                 <p className={d.unrealizedReturnPct >= 0 ? 'text-gain' : 'text-loss'}>
                   {formatPercent(d.unrealizedReturnPct)}
                 </p>
+                {d.duration && (
+                  <p className="text-xs text-muted-foreground">
+                    {d.duration}
+                    {d.annualizedReturn != null && (
+                      <span className={cn(
+                        'ml-1.5',
+                        d.annualizedReturn >= 0 ? 'text-gain' : 'text-loss'
+                      )}>
+                        · {d.annualizedReturn >= 0 ? '+' : ''}{d.annualizedReturn.toFixed(1)}%/yr
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
             )
           }}
@@ -363,6 +456,7 @@ function GeographicView({ holdings }: { holdings: ReturnType<typeof usePortfolio
 
 export function VisualizeClient({ holdings }: { holdings: ServerHolding[] }) {
   const [activeTab, setActiveTab] = useState<Tab>('treemap')
+  const [period, setPeriod] = useState<Period>('all')
   const metrics = usePortfolioMetrics(holdings)
 
   return (
@@ -391,32 +485,56 @@ export function VisualizeClient({ holdings }: { holdings: ServerHolding[] }) {
           ))}
         </div>
 
-        {/* Treemap legend */}
+        {/* Treemap controls */}
         {activeTab === 'treemap' && (
-          <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3 flex-wrap">
-            <span>Color = Unrealized return:</span>
-            {[
-              { color: '#22c55e', label: '>50%' },
-              { color: '#86efac', label: '5–50%' },
-              { color: '#bbf7d0', label: '0–5%' },
-              { color: '#fca5a5', label: '-5–0%' },
-              { color: '#ef4444', label: '<-5%' },
-            ].map((l) => (
-              <span key={l.label} className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm inline-block" style={{ background: l.color }} />
-                {l.label}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
+            {/* Period selector */}
+            <div className="flex items-center gap-1 rounded-lg bg-muted p-1 w-fit">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setPeriod(p.id)}
+                  className={cn(
+                    'px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap',
+                    period === p.id
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {/* Legend */}
+            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+              <span>
+                {period === 'all'
+                  ? 'Color = Unrealized return (all time):'
+                  : `Color = Price change (${PERIODS.find((p) => p.id === period)?.label}):`}
               </span>
-            ))}
+              {[
+                { color: '#22c55e', label: '>50%' },
+                { color: '#86efac', label: '5–50%' },
+                { color: '#bbf7d0', label: '0–5%' },
+                { color: '#fca5a5', label: '-5–0%' },
+                { color: '#ef4444', label: '<-5%' },
+              ].map((l) => (
+                <span key={l.label} className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded-sm inline-block" style={{ background: l.color }} />
+                  {l.label}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Content */}
-        {metrics.pricesLoading ? (
+        {activeTab === 'treemap' ? (
+          <TreemapSection holdings={holdings} period={period} />
+        ) : metrics.pricesLoading ? (
           <div className="h-80 flex items-center justify-center text-muted-foreground text-sm">
             Loading prices…
           </div>
-        ) : activeTab === 'treemap' ? (
-          <TreemapView holdings={metrics.holdings} />
         ) : activeTab === 'rankings' ? (
           <RankingsView holdings={metrics.holdings} />
         ) : activeTab === 'sector' ? (

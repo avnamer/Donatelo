@@ -7,7 +7,7 @@ import { ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react'
 import { usePortfolioMetrics } from '@/hooks/usePortfolio'
 import { formatCurrency, formatPercent } from '@/lib/calculations'
 import { useUIStore } from '@/store/ui'
-import { cn, formatHoldingDuration } from '@/lib/utils'
+import { cn, formatHoldingDurationLong, calcAnnualizedReturn } from '@/lib/utils'
 import { AddHoldingDialog } from './AddHoldingDialog'
 import { RenameFolderDialog } from './RenameFolderDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -275,7 +275,10 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                   const d = new Date(lot.purchaseDate)
                   return min === null || d < min ? d : min
                 }, null)
-                const duration = oldestLot ? formatHoldingDuration(oldestLot) : null
+                const duration       = oldestLot ? formatHoldingDurationLong(oldestLot) : null
+                const annualizedReturn = oldestLot
+                  ? calcAnnualizedReturn(h.unrealizedReturnPct, oldestLot)
+                  : null
 
                 return (
                   <tr key={h.holdingId} className="border-b last:border-0 hover:bg-muted/20 transition-colors group">
@@ -302,6 +305,14 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                         {duration && (
                           <span className="text-xs text-muted-foreground font-normal mt-0.5">
                             {duration}
+                            {annualizedReturn !== null && (
+                              <span className={cn(
+                                'ml-1.5',
+                                annualizedReturn >= 0 ? 'text-gain' : 'text-loss'
+                              )}>
+                                ({annualizedReturn >= 0 ? '+' : ''}{annualizedReturn.toFixed(1)}%/yr)
+                              </span>
+                            )}
                           </span>
                         )}
                       </div>

@@ -102,13 +102,49 @@
 
 ## Phase 3 — AI & Advanced Visualizations
 
-### AI Agents (`/` sidebar or floating panel)
-- ⬜ Portfolio Analyzer — explains state, flags issues
-- ⬜ Rebalancing Advisor — suggests trades
-- ⬜ Dividend Insights — trends, projections
-- ⬜ Market Research — on-demand holding info
-- ⬜ Chat interface (read-only, no trade execution)
-- *(Requires `ANTHROPIC_API_KEY`)*
+### AI Agents Layer — 4-Agent Architecture
+*(Requires `ANTHROPIC_API_KEY` — set in `.env.local`)*
+*(Implementation plan: `docs/superpowers/plans/2026-05-19-ai-agents.md`)*
+
+**Workflow:** User enters portfolio → Orchestrator fires sub-agents in parallel → insights surface in floating panel
+
+#### Foundation (Task 1–3)
+- ⬜ DB: `holding_theses` table — stores user's investment thesis per holding (rawText, structured thesis, horizon, catalysts, riskFactors)
+- ⬜ DB: `agent_insights` table — cached orchestrator output (type, severity, title, body, dismissed)
+- ⬜ TypeScript types: `src/types/agents.ts`
+- ⬜ DB queries: `src/lib/db/queries/agents.ts`
+
+#### Agent 1 — Orchestrator (`src/lib/agents/orchestrator.ts`)
+- ⬜ Coordinates Market + Profile + Rebalancing agents
+- ⬜ Synthesizes outputs → `AgentInsight[]` with `portfolioHealth` summary
+- ⬜ Caches results to DB (24h TTL, force-refresh supported)
+- ⬜ API: `GET /api/agents/insights?portfolioId=xxx&force=false`
+
+#### Agent 2 — Market Research Agent (`src/lib/agents/market-agent.ts`)
+- ⬜ Fetches 30-day price history per holding via Polygon.io (US) / TASE API
+- ⬜ Computes price change % and trend direction
+- ⬜ Calls Claude only for significant movers (>3% threshold) — minimizes API cost
+- ⬜ Returns `MarketUpdate[]` with trend + 1-sentence reason
+
+#### Agent 3 — Investor Profile Agent (`src/lib/agents/profile-agent.ts`)
+- ⬜ **Analysis mode**: given market updates + stored theses → evaluates if each thesis is still intact
+- ⬜ **Chat mode**: streaming conversation (Hebrew/English) that extracts structured theses from user
+- ⬜ Auto-saves thesis to DB when Claude extracts it (via `<thesis>` JSON tag)
+- ⬜ API: `POST /api/agents/chat` — SSE streaming
+- ⬜ API: `GET/POST /api/agents/thesis` — thesis CRUD per holding
+
+#### Agent 4 — Rebalancing/Strategy Agent (`src/lib/agents/rebalancing-agent.ts`)
+- ⬜ Compares actual folder allocations vs target allocations
+- ⬜ Flags drift ≥ 5% as warning, ≥ 10% as alert
+- ⬜ Pure function — no Claude call needed (math-only)
+- ⬜ Feeds drift results into Orchestrator insights
+
+#### UI — Floating Agent Panel (`src/components/agents/`)
+- ⬜ Floating 🤖 button (bottom-right, fixed position)
+- ⬜ Panel with two tabs: **Insights** | **Chat**
+- ⬜ Insights tab: severity-colored cards (info/warning/alert), Refresh button, portfolio health summary
+- ⬜ Chat tab: streaming chat with Donatelo (Profile Agent), auto-saves thesis on extraction
+- ⬜ Mounted in `src/app/(dashboard)/layout.tsx`
 
 ### Visualize (`/visualize`)
 - 🚧 Page exists, content unclear

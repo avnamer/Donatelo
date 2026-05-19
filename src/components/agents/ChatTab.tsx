@@ -19,7 +19,12 @@ export function ChatTab({ portfolioId }: Props) {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  // Abort any in-flight stream on unmount
+  useEffect(() => {
+    return () => { abortRef.current?.abort() }
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -38,41 +43,76 @@ export function ChatTab({ portfolioId }: Props) {
     // Add empty assistant placeholder
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       const res = await fetch('/api/agents/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: withUser, portfolioId }),
+        signal: controller.signal,
       })
 
-      if (!res.body) return
+      if (!res.ok || !res.body) {
+        setMessages((prev) => {
+          const updated = [...prev]
+          updated[updated.length - 1] = {
+            role: 'assistant',
+            content: 'Something went wrong. Please try again.',
+          }
+          return updated
+        })
+        return
+      }
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
+      let lineBuffer = ''
+      let finished = false
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read()
+          if (done) break
 
-        const chunk = decoder.decode(value, { stream: true })
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6)
-          if (data === '[DONE]') break
-          try {
-            const { text: chunkText } = JSON.parse(data) as { text: string }
-            setMessages((prev) => {
-              const updated = [...prev]
-              updated[updated.length - 1] = {
-                role: 'assistant',
-                content: updated[updated.length - 1].content + chunkText,
-              }
-              return updated
-            })
-          } catch {
-            // Partial SSE line — skip
+          // Accumulate into buffer to handle TCP-split SSE lines
+          lineBuffer += decoder.decode(value, { stream: true })
+          const lines = lineBuffer.split('\n')
+          lineBuffer = lines.pop() ?? '' // keep incomplete trailing line
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            const data = line.slice(6)
+            if (data === '[DONE]') { finished = true; break }
+            try {
+              const { text: chunkText } = JSON.parse(data) as { text: string }
+              setMessages((prev) => {
+                const updated = [...prev]
+                updated[updated.length - 1] = {
+                  role: 'assistant',
+                  content: updated[updated.length - 1].content + chunkText,
+                }
+                return updated
+              })
+            } catch {
+              // Malformed JSON line — skip
+            }
           }
         }
+      } finally {
+        reader.cancel()
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        setMessages((prev) => {
+          const updated = [...prev]
+          updated[updated.length - 1] = {
+            role: 'assistant',
+            content: 'Connection error. Please try again.',
+          }
+          return updated
+        })
       }
     } finally {
       setStreaming(false)
@@ -102,14 +142,12 @@ export function ChatTab({ portfolioId }: Props) {
       {/* Input row */}
       <div className="flex gap-2 items-end">
         <textarea
-          ref={textareaRef}
           rows={1}
           className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring min-h-[38px] max-h-[100px]"
           placeholder="ספר לי על השקעה שלך…"
           value={input}
           onChange={(e) => {
             setInput(e.target.value)
-            // Auto-resize
             e.target.style.height = 'auto'
             e.target.style.height = `${Math.min(e.target.scrollHeight, 100)}px`
           }}

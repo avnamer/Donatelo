@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AgentInsight } from '@/types/agents'
@@ -38,19 +38,39 @@ export function InsightsTab({ portfolioId }: Props) {
   const [loading, setLoading] = useState(false)
   const [summary, setSummary] = useState<string | null>(null)
   const [health, setHealth] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  async function refresh(force = false) {
+  const refresh = useCallback(async (force = false, signal?: AbortSignal) => {
     setLoading(true)
+    setError(null)
     try {
-      const res = await fetch(`/api/agents/insights?portfolioId=${portfolioId}&force=${force}`)
+      const res = await fetch(
+        `/api/agents/insights?portfolioId=${portfolioId}&force=${force}`,
+        { signal }
+      )
+      if (!res.ok) {
+        setError('Failed to load insights.')
+        return
+      }
       const data = await res.json()
       setInsights(data.insights ?? [])
       setSummary(data.summary ?? null)
       setHealth(data.portfolioHealth ?? null)
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        setError('Failed to load insights.')
+      }
     } finally {
       setLoading(false)
     }
-  }
+  }, [portfolioId])
+
+  // Auto-load cached insights on mount; abort on unmount or portfolioId change
+  useEffect(() => {
+    const controller = new AbortController()
+    refresh(false, controller.signal)
+    return () => controller.abort()
+  }, [refresh])
 
   return (
     <div className="flex flex-col gap-3 h-full">
@@ -65,6 +85,7 @@ export function InsightsTab({ portfolioId }: Props) {
           {summary && (
             <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{summary}</p>
           )}
+          {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
         </div>
         <button
           onClick={() => refresh(true)}
@@ -77,7 +98,7 @@ export function InsightsTab({ portfolioId }: Props) {
       </div>
 
       {/* Empty state */}
-      {insights.length === 0 && !loading && (
+      {insights.length === 0 && !loading && !error && (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
           <p className="text-sm text-muted-foreground">No insights yet.</p>
           <button

@@ -1,6 +1,6 @@
 // src/types/agents.ts
 
-export type InsightType = 'THESIS_BROKEN' | 'ALLOCATION_DRIFT' | 'MARKET_UPDATE' | 'OPPORTUNITY'
+export type InsightType = 'THESIS_BROKEN' | 'THESIS_REVIEW' | 'ALLOCATION_DRIFT' | 'MARKET_UPDATE' | 'OPPORTUNITY'
 export type InsightSeverity = 'info' | 'warning' | 'alert'
 export type InvestmentHorizon = 'short' | 'medium' | 'long'
 export type MarketTrend = 'bullish' | 'bearish' | 'neutral'

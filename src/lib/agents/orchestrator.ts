@@ -49,7 +49,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       insights.push({
         portfolioId,
         userId,
-        type: 'THESIS_BROKEN',
+        type: 'THESIS_REVIEW',
         severity: 'warning',
         holdingId: ev.holdingId,
         title: `Worth reviewing: ${ev.tickerSymbol}`,

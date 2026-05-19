@@ -104,6 +104,26 @@ export async function updatePortfolio(
 }
 
 /**
+ * Flat list of active holdings for a portfolio (for chat context).
+ */
+export async function getPortfolioHoldingsSummary(portfolioId: string, userId: string) {
+  const portfolio = await prisma.portfolio.findFirst({
+    where: { id: portfolioId, userId },
+    include: {
+      folders: {
+        include: {
+          holdings: {
+            where: { isActive: true },
+            select: { id: true, name: true, tickerSymbol: true, exchange: true },
+          },
+        },
+      },
+    },
+  })
+  return portfolio?.folders.flatMap((f) => f.holdings) ?? []
+}
+
+/**
  * Delete a portfolio and all its children (cascade in DB).
  */
 export async function deletePortfolio(portfolioId: string, userId: string) {

@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { getCurrentUser } from '@/lib/db/supabase-server'
 import { getPortfolios } from '@/lib/db/queries'
 import { TopNav } from '@/components/portfolio/TopNav'
+import { AgentPanel } from '@/components/agents/AgentPanel'
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser()
@@ -17,6 +18,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <main className="container mx-auto px-4 py-6 max-w-[1400px]">
         {children}
       </main>
+      <AgentPanel portfolioId={selectedId} />
     </div>
   )
 }

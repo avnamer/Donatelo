@@ -66,6 +66,7 @@ model Holding {
   folder       Folder        @relation(fields: [folderId], references: [id], onDelete: Cascade)
   lots         Lot[]
   transactions Transaction[]
+  thesis       HoldingThesis?
 
   @@index([folderId])
   @@index([tickerSymbol])
@@ -202,4 +203,43 @@ model ExploreProfile {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("explore_profiles")
+}
+
+// ─────────────────────────────────────────────
+// AI AGENTS
+// ─────────────────────────────────────────────
+
+model HoldingThesis {
+  id          String   @id @default(uuid())
+  holdingId   String   @unique @map("holding_id")
+  userId      String   @map("user_id")
+  rawText     String   @map("raw_text")         // original user explanation
+  thesis      String                             // structured 1-2 sentence thesis
+  horizon     String?                            // "short" | "medium" | "long"
+  catalysts   Json     @default("[]")            // string[]
+  riskFactors Json     @default("[]")            // string[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  holding Holding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("holding_theses")
+}
+
+model AgentInsight {
+  id          String   @id @default(uuid())
+  portfolioId String   @map("portfolio_id")
+  userId      String   @map("user_id")
+  type        String   // "THESIS_BROKEN" | "ALLOCATION_DRIFT" | "MARKET_UPDATE" | "OPPORTUNITY"
+  severity    String   // "info" | "warning" | "alert"
+  holdingId   String?  @map("holding_id")
+  title       String
+  body        String
+  dismissed   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([portfolioId, dismissed])
+  @@index([createdAt(sort: Desc)])
+  @@map("agent_insights")
 }

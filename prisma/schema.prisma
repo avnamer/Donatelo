@@ -23,9 +23,10 @@ model Portfolio {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  folders      Folder[]
-  cashAccounts CashAccount[]
-  transactions Transaction[]
+  folders       Folder[]
+  cashAccounts  CashAccount[]
+  transactions  Transaction[]
+  agentInsights AgentInsight[]
 
   @@index([userId])
   @@map("portfolios")
@@ -63,10 +64,11 @@ model Holding {
   isActive            Boolean  @default(true) @map("is_active")
   createdAt           DateTime @default(now()) @map("created_at")
 
-  folder       Folder        @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  lots         Lot[]
-  transactions Transaction[]
-  thesis       HoldingThesis?
+  folder        Folder         @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  lots          Lot[]
+  transactions  Transaction[]
+  thesis        HoldingThesis?
+  agentInsights AgentInsight[]
 
   @@index([folderId])
   @@index([tickerSymbol])
@@ -217,7 +219,7 @@ model HoldingThesis {
   thesis      String                             // structured 1-2 sentence thesis
   horizon     String?                            // "short" | "medium" | "long"
   catalysts   Json     @default("[]")            // string[]
-  riskFactors Json     @default("[]")            // string[]
+  riskFactors Json     @default("[]") @map("risk_factors")  // string[]
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -238,6 +240,9 @@ model AgentInsight {
   body        String
   dismissed   Boolean  @default(false)
   createdAt   DateTime @default(now()) @map("created_at")
+
+  portfolio Portfolio  @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  holding   Holding?   @relation(fields: [holdingId],   references: [id], onDelete: SetNull)
 
   @@index([portfolioId, dismissed])
   @@index([createdAt(sort: Desc)])

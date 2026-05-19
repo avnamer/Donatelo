@@ -142,9 +142,30 @@ function mergeChartData(
     }
   }
 
-  return Array.from(map.entries())
+  const rows = Array.from(map.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, row]) => row)
+
+  // The portfolio series currently has only 2 anchor points (start + end of
+  // period). All intermediate rows have index=null, so Recharts excludes the
+  // portfolio from the tooltip payload when hovering over benchmark-only dates.
+  // Fix: linearly interpolate the portfolio value for every row between the
+  // two anchors so both series always appear in the tooltip.
+  const anchorIndices = rows
+    .map((r, i) => (r.index !== null ? i : -1))
+    .filter((i) => i !== -1)
+
+  if (anchorIndices.length === 2) {
+    const [si, ei] = anchorIndices
+    const sv = rows[si].index!
+    const ev = rows[ei].index!
+    const steps = ei - si
+    for (let i = si + 1; i < ei; i++) {
+      rows[i].index = sv + ((ev - sv) * (i - si)) / steps
+    }
+  }
+
+  return rows
 }
 
 // ─── Benchmark selector ───────────────────────

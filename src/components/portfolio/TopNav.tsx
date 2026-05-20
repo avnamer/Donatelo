@@ -15,12 +15,13 @@ import { useState, useEffect, useRef } from 'react'
 interface Portfolio { id: string; name: string }
 
 const NAV_ITEMS = [
-  { href: '/',            label: 'Home',        icon: Home },
-  { href: '/invest',      label: 'Invest',      icon: TrendingUp },
-  { href: '/visualize',   label: 'Visualize',   icon: BarChart2 },
-  { href: '/allocations', label: 'Allocations', icon: PieChart },
-  { href: '/dividends',   label: 'Dividends',   icon: DollarSign },
-  { href: '/activity',    label: 'Activity',    icon: Activity },
+  { href: '/',              label: 'Home',         icon: Home },
+  { href: '/my-portfolio',  label: 'My Portfolio', icon: Briefcase },
+  { href: '/invest',        label: 'Invest',       icon: TrendingUp },
+  { href: '/visualize',     label: 'Visualize',    icon: BarChart2 },
+  { href: '/allocations',   label: 'Allocations',  icon: PieChart },
+  { href: '/dividends',     label: 'Dividends',    icon: DollarSign },
+  { href: '/activity',      label: 'Activity',     icon: Activity },
 ]
 
 export function TopNav({

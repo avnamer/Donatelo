@@ -1,3 +1,6 @@
+# Git worktrees
+.worktrees/
+
 # Dependencies
 node_modules/
 .pnpm-store/
@@ -37,3 +40,5 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel

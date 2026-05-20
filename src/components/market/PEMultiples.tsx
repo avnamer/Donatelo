@@ -35,12 +35,15 @@ export function PEMultiples() {
 
   const selected = PE_DATA.find((d) => d.id === selectedId) ?? PE_DATA[0]
 
-  const median = useMemo(() => {
-    const values = selected.history.map((p) => p.pe).sort((a, b) => a - b)
-    const mid = Math.floor(values.length / 2)
-    return values.length % 2 === 0
-      ? (values[mid - 1] + values[mid]) / 2
-      : values[mid]
+  const { median, average } = useMemo(() => {
+    const values = selected.history.map((p) => p.pe)
+    const avg = values.reduce((s, v) => s + v, 0) / values.length
+    const sorted = [...values].sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    const med = sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid]
+    return { median: med, average: avg }
   }, [selected])
 
   return (
@@ -101,16 +104,30 @@ export function PEMultiples() {
             domain={['auto', 'auto']}
           />
           <Tooltip content={<PETooltip />} />
+          {/* Average line — amber, solid */}
+          <ReferenceLine
+            y={average}
+            stroke="#f59e0b"
+            strokeWidth={1.5}
+            strokeDasharray="6 3"
+            label={{
+              value: `ממוצע ${average.toFixed(1)}x`,
+              position: 'insideBottomRight',
+              fontSize: 9,
+              fill: '#f59e0b',
+            }}
+          />
+          {/* Median line — slate, dashed */}
           <ReferenceLine
             y={median}
-            stroke="hsl(var(--muted-foreground))"
-            strokeDasharray="4 4"
-            strokeWidth={1}
+            stroke="#94a3b8"
+            strokeWidth={1.5}
+            strokeDasharray="3 3"
             label={{
               value: `מדיאן ${median.toFixed(1)}x`,
               position: 'insideTopRight',
               fontSize: 9,
-              fill: 'hsl(var(--muted-foreground))',
+              fill: '#94a3b8',
             }}
           />
           <Line
@@ -124,9 +141,21 @@ export function PEMultiples() {
         </LineChart>
       </ResponsiveContainer>
 
-      <p className="text-xs text-muted-foreground mt-1 text-center">
-        נתונים היסטוריים שנתיים · הקו המקווקו = מדיאן {selected.history.length}-שנה
-      </p>
+      {/* Legend */}
+      <div className="flex items-center justify-center gap-5 mt-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-4 h-0.5 rounded" style={{ backgroundColor: '#3b82f6' }} />
+          P/E
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-4 h-0.5" style={{ backgroundColor: '#f59e0b', backgroundImage: 'repeating-linear-gradient(90deg,#f59e0b 0,#f59e0b 4px,transparent 4px,transparent 7px)' }} />
+          ממוצע
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-4 h-0.5" style={{ backgroundColor: '#94a3b8', backgroundImage: 'repeating-linear-gradient(90deg,#94a3b8 0,#94a3b8 3px,transparent 3px,transparent 6px)' }} />
+          מדיאן
+        </span>
+      </div>
     </div>
   )
 }

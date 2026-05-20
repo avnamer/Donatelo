@@ -35,7 +35,7 @@ interface PerformanceChartProps {
 
 // ─── Time range selector ──────────────────────
 
-const TIME_RANGES: TimeRange[] = ['1M', '3M', '6M', 'YTD', '1Y', '3Y', 'ALL']
+const TIME_RANGES: TimeRange[] = ['1W', '1M', '3M', '6M', 'YTD', '1Y', '2Y', '3Y', 'ALL']
 
 function TimeRangeSelector() {
   const { timeRange, setTimeRange } = useUIStore()

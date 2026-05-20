@@ -118,11 +118,13 @@ export function calcAnnualizedReturn(
 export function getTimeRangeCutoff(timeRange: TimeRange, today: Date = new Date()): Date {
   const d = new Date(today)
   switch (timeRange) {
+    case '1W':  d.setDate(d.getDate() - 7);        return d
     case '1M':  d.setDate(d.getDate() - 30);       return d
     case '3M':  d.setDate(d.getDate() - 90);       return d
     case '6M':  d.setDate(d.getDate() - 180);      return d
     case 'YTD': return new Date(d.getFullYear(), 0, 1)
     case '1Y':  d.setFullYear(d.getFullYear() - 1); return d
+    case '2Y':  d.setFullYear(d.getFullYear() - 2); return d
     case '3Y':  d.setFullYear(d.getFullYear() - 3); return d
     case 'ALL': return new Date(0)
   }

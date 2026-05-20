@@ -360,4 +360,17 @@ describe('getTimeRangeCutoff', () => {
     const result = getTimeRangeCutoff('ALL', today)
     expect(result.getTime()).toBe(0)
   })
+
+  it('1W → 7 days before today', () => {
+    const result = getTimeRangeCutoff('1W', today)
+    const expected = new Date(today)
+    expected.setDate(expected.getDate() - 7)
+    expect(result.toDateString()).toBe(expected.toDateString())
+  })
+
+  it('2Y → 2 years before today', () => {
+    const result = getTimeRangeCutoff('2Y', today)
+    expect(result.getFullYear()).toBe(2024)
+    expect(result.getMonth()).toBe(today.getMonth())
+  })
 })

@@ -8,7 +8,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Currency } from '@/types'
 
-export type TimeRange = '1M' | '3M' | '6M' | 'YTD' | '1Y' | '3Y' | 'ALL'
+export type TimeRange = '1W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '2Y' | '3Y' | 'ALL'
 
 export type BenchmarkId =
   | 'none'

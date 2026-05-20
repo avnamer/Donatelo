@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { getCurrentUser } from '@/lib/db/supabase-server'
-import { getPortfolios, getHoldingsForPortfolio, getFolders } from '@/lib/db/queries'
-import { HomeClient } from '@/components/portfolio/HomeClient'
+import { getPortfolios, getHoldingsForPortfolio } from '@/lib/db/queries'
+import { HomeDashboardClient } from '@/components/portfolio/HomeDashboardClient'
 import { CreatePortfolioForm } from '@/components/portfolio/CreatePortfolioForm'
 import type { ServerHolding } from '@/hooks/usePortfolio'
 import type { Lot } from '@/types'
@@ -20,10 +20,8 @@ export default async function HomePage() {
   const cookieStore = await cookies()
   const savedId = cookieStore.get('portfolio-id')?.value
   const portfolio = portfolios.find((p) => p.id === savedId) ?? portfolios[0]
-  const [rawHoldings, folders] = await Promise.all([
-    getHoldingsForPortfolio(portfolio.id, user.id),
-    getFolders(portfolio.id, user.id),
-  ])
+
+  const rawHoldings = await getHoldingsForPortfolio(portfolio.id, user.id)
 
   const holdings: ServerHolding[] = rawHoldings.map((h) => ({
     id: h.id,
@@ -44,33 +42,14 @@ export default async function HomePage() {
     })) as unknown as Lot[],
   }))
 
-  // Serialize Decimal targetAllocationPct for client
-  const serializedFolders = folders.map((f) => ({
-    ...f,
-    targetAllocationPct: f.targetAllocationPct ? Number(f.targetAllocationPct) : null,
-    createdAt: f.createdAt.toISOString(),
-  }))
-
-  return (
-    <HomeClient
-      holdings={holdings}
-      portfolioName={portfolio.name}
-      portfolioId={portfolio.id}
-      folders={serializedFolders as any}
-    />
-  )
+  return <HomeDashboardClient holdings={holdings} />
 }
 
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center space-y-6 max-w-sm mx-auto">
       <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-        <svg
-          className="w-8 h-8 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
+        <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
         </svg>
       </div>

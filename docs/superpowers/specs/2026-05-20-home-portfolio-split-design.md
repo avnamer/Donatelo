@@ -173,9 +173,122 @@ The `timeRange` and `benchmark` are read from `useUIStore` as usual. `fromDate` 
 
 ---
 
+## Section 4 — Time Range Additions
+
+Add two new values to the `TimeRange` type: `1W` (one week) and `2Y` (two years).
+
+### 4a — Type change
+
+**File:** `src/types/index.ts` (or wherever `TimeRange` is defined)
+
+```ts
+export type TimeRange = '1W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '2Y' | '3Y' | 'ALL'
+```
+
+Order in the UI toggle: `1W · 1M · 3M · 6M · YTD · 1Y · 2Y · 3Y · ALL`
+
+### 4b — Yahoo Finance mapping update
+
+Add rows to the range mapping table:
+
+| TimeRange | Yahoo `range` |
+|-----------|--------------|
+| `1W`  | `5d`   |
+| `2Y`  | `2y`   |
+
+(All existing rows unchanged.)
+
+### 4c — Files to update
+
+Every place that switches on `TimeRange` or maps it to a label/cutoff must be updated:
+
+- `src/lib/utils/index.ts` — `getTimeRangeCutoff()`: add `'1W'` (subtract 7 days) and `'2Y'` (subtract 2 years)
+- `src/hooks/useBenchmark.ts` — `rangeToYahoo` map
+- `src/app/api/market-movers/route.ts` — `rangeToYahoo` map (new file, created in Section 2)
+- `src/components/charts/PerformanceChart.tsx` — time range toggle button list
+- Any other exhaustive `TimeRange` switch/map in the codebase
+
+---
+
+## Section 5 — P/E Multiples Panel
+
+A new panel on the **home page** below the Market Movers row. Shows 30-year P/E history for 7 markets, with the current P/E prominently displayed.
+
+### 5a — Indices covered
+
+| Display name | Identifier | Index / proxy |
+|---|---|---|
+| S&P 500 | `sp500` | S&P 500 P/E (Shiller CAPE) |
+| נאסדק | `nasdaq` | Nasdaq 100 P/E |
+| הודו | `india` | NIFTY 50 P/E |
+| ת"א 35 | `ta35` | TA-35 P/E |
+| ת"א 90 | `ta90` | TA-90 P/E |
+| ת"א 125 | `ta125` | TA-125 P/E |
+| סין טכנולוגיה | `chinatech` | MSCI China Tech / CQQQ P/E |
+
+### 5b — Data format
+
+**File:** `src/data/pe-history.ts`
+
+```ts
+export interface PEDataPoint {
+  year: number   // e.g. 1995
+  pe: number     // e.g. 18.4
+}
+
+export interface PEIndex {
+  id: string
+  label: string          // display name (Hebrew ok)
+  currentPE: number      // most recent value
+  history: PEDataPoint[] // annual data points, ~30 years
+}
+
+export const PE_DATA: PEIndex[] = [
+  {
+    id: 'sp500',
+    label: 'S&P 500',
+    currentPE: 27.2,
+    history: [
+      { year: 1995, pe: 16.5 },
+      // ... one entry per year through 2025
+    ]
+  },
+  // ... remaining 6 indices
+]
+```
+
+All values are **hardcoded static data** — annual P/E for each year from ~1995 to 2025 (30 years). Data does not need live updates; it is entered once and updated manually when the developer chooses.
+
+### 5c — UI component
+
+**File:** `src/components/market/PEMultiples.tsx`
+
+**`PEMultiples`** component:
+
+- Header: "מכפילי רווח — 30 שנה"
+- Top row: 7 cards, one per index — shows `label` + `currentPE` + colored dot (green if below 20-year median, red if above)
+- Selected index state (default: `sp500`): clicking a card selects it
+- Chart: Recharts `LineChart` of `history` for the selected index
+  - X-axis: year labels
+  - Y-axis: P/E value
+  - Horizontal reference line: 20-year median P/E (calculated at render time)
+  - Tooltip: year + P/E value
+- Layout: chart takes full width, index cards above it
+- Colors: chart line `#3b82f6`, median line `#475569` dashed
+
+### 5d — Home page placement
+
+In `HomeDashboardClient`:
+1. `PerformanceChart` section
+2. `MarketMovers` section (3 boxes)
+3. `PEMultiples` section (new, below market movers)
+
+---
+
 ## Out of Scope
 
 - Showing company names (avoids doubling API calls)
 - Negative performers / bottom 10
 - Clicking a ticker to open its detail page
 - Caching market movers in a database
+- Live/real-time P/E feeds (all P/E data is static)

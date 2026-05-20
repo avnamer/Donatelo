@@ -4,10 +4,11 @@
 // Returns top-10 performers by % return for three markets:
 //   { israel: Mover[], us: Mover[], etf: Mover[] }
 //
-// interface Mover { ticker: string; returnPct: number }
+// interface Mover { ticker: string; name: string; returnPct: number }
 //
 // Uses Yahoo Finance public chart API — no API key needed.
 // Tickers that fail are silently skipped.
+// Name is extracted from meta.shortName in the same response — no extra calls.
 // ─────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -16,6 +17,7 @@ import type { TimeRange } from '@/store/ui'
 
 export interface Mover {
   ticker: string
+  name: string       // display name from Yahoo Finance meta.shortName
   returnPct: number
 }
 
@@ -61,9 +63,9 @@ function toYahooRange(period: TimeRange): string {
   }
 }
 
-// ── Fetch single ticker return ─────────────────
+// ── Fetch single ticker return + name ─────────────────
 
-async function fetchReturn(ticker: string, range: string): Promise<number | null> {
+async function fetchMover(ticker: string, range: string): Promise<Mover | null> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=1d`
     const res = await fetch(url, {
@@ -75,18 +77,24 @@ async function fetchReturn(ticker: string, range: string): Promise<number | null
     const json = await res.json() as {
       chart?: {
         result?: Array<{
+          meta?: { shortName?: string; longName?: string }
           indicators?: { quote?: Array<{ close?: (number | null)[] }> }
         }>
       }
     }
 
-    const closes = json.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? []
+    const result    = json.chart?.result?.[0]
+    const closes    = result?.indicators?.quote?.[0]?.close ?? []
     const validCloses = closes.filter((c): c is number => c !== null && c > 0)
     if (validCloses.length < 2) return null
 
     const first = validCloses[0]
     const last  = validCloses[validCloses.length - 1]
-    return ((last - first) / first) * 100
+    const returnPct = ((last - first) / first) * 100
+
+    const name = result?.meta?.shortName ?? result?.meta?.longName ?? ticker
+
+    return { ticker, name, returnPct }
   } catch {
     return null
   }
@@ -95,12 +103,7 @@ async function fetchReturn(ticker: string, range: string): Promise<number | null
 // ── Top-10 from a ticker list ──────────────────
 
 async function topTen(tickers: string[], range: string): Promise<Mover[]> {
-  const results = await Promise.all(
-    tickers.map(async (ticker) => {
-      const returnPct = await fetchReturn(ticker, range)
-      return returnPct !== null ? { ticker, returnPct } : null
-    })
-  )
+  const results = await Promise.all(tickers.map((ticker) => fetchMover(ticker, range)))
   return results
     .filter((r): r is Mover => r !== null)
     .sort((a, b) => b.returnPct - a.returnPct)

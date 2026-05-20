@@ -44,11 +44,14 @@ function MoverBox({ flag, market, period, movers, loading, accentColor, borderCo
         <p className="text-xs text-muted-foreground text-center py-4">No data available</p>
       ) : (
         <ol className="space-y-1.5">
-          {movers.map(({ ticker, returnPct }) => (
-            <li key={ticker} className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground font-mono">{ticker}</span>
+          {movers.map(({ ticker, name, returnPct }) => (
+            <li key={ticker} className="flex items-center justify-between gap-2 min-w-0">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-foreground truncate leading-tight">{name}</p>
+                <p className="text-[10px] text-muted-foreground font-mono leading-tight">{ticker}</p>
+              </div>
               <span className={cn(
-                'text-xs font-semibold tabular-nums',
+                'text-xs font-semibold tabular-nums flex-shrink-0',
                 returnPct >= 0 ? 'text-gain' : 'text-loss',
               )}>
                 {returnPct >= 0 ? '+' : ''}{returnPct.toFixed(2)}%

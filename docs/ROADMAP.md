@@ -7,30 +7,26 @@ then layer on features. Each phase ships something usable.
 ---
 
 ## Phase 1 — Core Portfolio Tracker
-**Goal:** You can enter your holdings and see your portfolio value and returns.
-**Estimated effort:** 2-3 weeks
 
 ### 1.1 Project Setup
 - [x] `npx create-next-app@latest` with TypeScript + Tailwind
-- [x] Install dependencies: shadcn/ui, TanStack Query, Recharts, Prisma, Zustand
+- [x] shadcn/ui, TanStack Query, Recharts, Prisma, Zustand
 - [x] Supabase project setup (DB + Auth)
 - [x] Prisma schema + first migration
-- [x] Environment variables
-- [x] Basic folder structure per CLAUDE.md
+- [x] Environment variables + folder structure per CLAUDE.md
 
 ### 1.2 Authentication
 - [x] Supabase Auth: Google OAuth + email/password
-- [x] Protected routes middleware
-- [x] User session handling
+- [x] Protected routes middleware + user session handling
 
 ### 1.3 Data Layer
-- [x] Prisma models: Portfolio, Folder, Holding, Lot (see DATA_MODEL.md)
+- [x] Prisma models: Portfolio, Folder, Holding, Lot
 - [x] Supabase RLS policies (users see own data only)
 - [x] DB query functions in `src/lib/db/`
 - [x] Zod schemas for all data inputs
 
 ### 1.4 Price Integration
-- [x] `GET /api/prices` route — fetches and caches prices
+- [x] `GET /api/prices` — fetches and caches prices
 - [x] Polygon.io client (`src/lib/api/polygon.ts`)
 - [x] TASE DataWise client (`src/lib/api/tase.ts`)
 - [x] `price_cache` table + TTL logic
@@ -38,271 +34,222 @@ then layer on features. Each phase ships something usable.
 
 ### 1.5 Calculation Engine
 - [x] All functions in `src/lib/calculations/`
-- [x] Unit tests with Vitest (verify against Donatello values)
+- [x] Unit tests with Vitest
 - [x] calcCurrentValue, calcCostBasis, calcUnrealizedGains
 - [x] calcTotalReturn, calcActualAllocationPct, calcExpenseRatio
 
-### 1.6 Home Page (Dashboard)
-- [x] Folder tree component (recursive)
-- [x] Holdings table (Name, Value, Gain/Return, Actual/Target)
-- [x] KPI panel (Value, Return, Gain, Expense Ratio, Dividend Yield)
-- [x] Donut chart (right panel, allocation breakdown)
+### 1.6 My Portfolio Page (`/my-portfolio`)
+- [x] Recursive folder tree component
+- [x] Holdings table: Name, Value, Gain/Return, Actual/Target, Duration
+- [x] KPI panel: Value, Return, Gain, Expense Ratio
+- [x] Allocation donut chart (right panel)
 - [x] Folder drill-down navigation with breadcrumb
-- [x] "Last Updated" timestamp — derived from most recent price date
+- [x] "Last Updated" timestamp from most recent price date
+- [x] Stale prices banner + unavailable prices panel
 
 ### 1.7 Portfolio Management (CRUD)
-- [x] Add folder (modal)
-- [x] Rename folder
-- [x] Delete folder (with confirmation, checks if empty)
-- [x] Move folder (drag & drop or modal)
-- [x] Add holding to folder (search by ticker symbol)
-- [x] Delete holding
+- [x] Add / Rename / Delete folder (modal + confirmation)
+- [x] Add / Delete holding (search by ticker)
 
 ### 1.8 Lot Management
-- [x] Individual holding page (`/tickers/[symbol]`)
-- [x] Lots table (date, shares, cost, account, folder)
-- [x] Add new lot (inline form)
-- [x] Delete lot
-- [x] Mark lot as sold (partial or full)
-- [x] Price chart for the holding (1Y, Recharts area chart)
+- [x] Individual holding page (`/holdings/[id]`)
+- [x] Lots table: date, shares, cost, account, folder
+- [x] Add / Edit / Delete lot
+- [x] Mark lot as sold — partial or full (SellLotDialog)
+- [x] Price chart: 1W, 1Y, Recharts area chart
 
 ### 1.9 Cash Accounts
-- [x] Add ILS / USD cash account — AddCashDialog + /api/cash-accounts route
+- [x] Add ILS / USD cash account — AddCashDialog + `/api/cash-accounts`
 - [ ] Update balance (edit dialog)
-- [x] Show in holdings table
+- [ ] Show cash balance in holdings table
 
 ---
 
 ## Phase 2 — Financial Features
-**Goal:** Target allocations, auto-invest, dividends, and activity log.
-**Estimated effort:** 2 weeks
 
-### 2.1 Target Allocations Page
-- [x] `/allocations` page
+### 2.1 Target Allocations Page (`/allocations`)
 - [x] Edit target % per folder (inline, auto-save)
-- [x] Visual: donut with current vs target rings
-- [x] Validation: total must = 100%
-- [x] Warning badge in nav when off-target — orange dot on Allocations tab
+- [x] Donut: current vs target rings
+- [x] Validation: total must equal 100%
+- [x] Warning badge in nav when off-target
+- [ ] **Drill-down tree** — expand folders → subfolders → holdings, set target % at every level
+  - Plan written: `docs/superpowers/plans/2026-05-17-allocations-drilldown.md`
+  - **NOT YET IMPLEMENTED**
 
-### 2.2 Auto-Invest Page
-- [x] `/invest` page
-- [x] Auto-invest algorithm (see CALCULATIONS.md §10)
+### 2.2 Auto-Invest Page (`/invest`)
+- [x] Auto-invest algorithm
 - [x] Fractional shares toggle
-- [x] Suggestions table
-- [x] Manual override of allocations
+- [x] Suggestions table + manual allocation override
 
 ### 2.3 Performance Chart
-- [x] Indexed chart (normalized to 100) on Home page
-- [x] Time ranges: 1W, 1M, 3M, 6M, YTD, 1Y, 2Y, 3Y, ALL (1W + 2Y added in Phase 6)
-- [x] Benchmark comparison: S&P 500 (SPY), MSCI ACWI, TA-125
-- [x] "Simulated performance" label
-- [x] Recharts area chart with smooth curve
-- [x] Dual-series tooltip — shows both portfolio and benchmark on every hover point
-- [x] Period return calculated with linear interpolation (no historical portfolio prices)
+- [x] Indexed chart (normalized to 100) on home page
+- [x] Time ranges: 1W, 3M, 6M, 9M, 1Y, 2Y, All
+- [x] Benchmark comparison: SPY, MSCI ACWI
+- [x] Dual-series tooltip (portfolio + benchmark on hover)
+- [x] Period return with linear interpolation
 
-### 2.4 Dividends Page
-- [x] `/dividends` page
+### 2.4 Dividends Page (`/dividends`)
 - [x] Annual summary panel
-- [x] Bar chart (quarterly/monthly/yearly)
-- [x] Breakdown toggle (by folder / by asset)
-- [x] Recent & upcoming dividends table
+- [x] Bar chart: quarterly / monthly / yearly
+- [x] Breakdown toggle: by folder / by asset
+- [x] Recent and upcoming dividends table
 - [x] Date picker + tax % input
-- [x] Upcoming dividends — projected from dividend cache (frequency + last ex-date)
+- [x] Projected upcoming dividends from dividend cache
 
-### 2.5 Activity Log
+### 2.5 Activity Log (`/activity`)
 - [x] Transaction model + API
-- [x] `/activity` page
-- [x] Summary panel (buys, sells, cash, dividends)
+- [x] Summary panel: buys, sells, cash, dividends
 - [x] Year + action type filters
-- [x] Three donut charts (inflows, outflows, dividends by folder)
-- [x] Activity log table with all transaction types
+- [x] Three donut charts: inflows, outflows, dividends by folder
+- [x] Full activity table with all transaction types
 - [x] Auto-create transactions when lots are added/sold
 
 ---
 
 ## Phase 3 — Data & Import
-**Goal:** Full data import from Donatello. Production-ready.
-**Estimated effort:** 1 week
 
-### 3.1 Import
-- [x] `/import` page — file drop zone + preview + confirm
-- [x] JSON backup parser (full round-trip: folders → holdings → lots → cash accounts)
-- [x] Preview step (shows counts before importing)
-- [x] Error handling (bad format, invalid JSON)
-- [ ] CSV parser for Donatello export format (bank/broker statements)
+### 3.1 Import (`/import`)
+- [x] File drop zone + preview + confirm
+- [x] JSON backup parser — full round-trip: folders, holdings, lots, cash accounts
+- [x] Preview step (shows counts) + error handling
+- [ ] CSV parser for broker/bank statement format
 
-### 3.2 Export
-- [x] `/export` page
-- [x] JSON full backup (portfolio + folders + holdings + lots + cash accounts)
+### 3.2 Export (`/export`)
+- [x] JSON full backup
 - [x] CSV: Holdings, Lots, Dividends
-- [x] Import/Export links added to TopNav
+- [x] Import/Export links in TopNav
 
-### 3.3 Explore Profiles
-- [x] `/explore` page
-- [x] Seed noteworthy profiles (data from Donatello)
-- [x] Profile detail view
-- [x] "Use as Template" — POST /api/explore/[id]/use-template creates root folders with colors + target allocations
+### 3.3 Explore Profiles (`/explore`)
+- [x] Seed profiles + detail view
+- [x] "Use as Template" — creates root folders with colors + target allocations
 
 ### 3.4 Production Hardening
-- [x] Error boundary (`error.tsx`) — catches dashboard-level errors with friendly UI
-- [x] Loading skeleton (`loading.tsx`) — matches dashboard layout
-- [x] Empty states — HoldingsTree, PerformanceChart, AllocationDonut
-- [x] Price unavailable fallback — stale multi-day cache + `unavailable` flag in API response
-- [x] Rate limit handling for Polygon.io — retry with exponential backoff (1 s → 2 s → 4 s), respects Retry-After header
-- [x] Vercel deployment — https://donatelo.vercel.app (deploy via `npx vercel --prod`)
-- [x] RLS policies applied to all 10 tables in production DB
-- [x] Google OAuth configured (Google Cloud Console + Supabase provider enabled)
-- [x] All 11 env vars set in Vercel production environment
-- [ ] Basic monitoring (Vercel Analytics)
+- [x] Error boundary + loading skeleton + empty states
+- [x] Price unavailable fallback + rate limit retry (Polygon.io)
+- [x] Vercel deployment — https://donatelo.vercel.app
+- [x] RLS policies on all tables in production
+- [x] Google OAuth + all env vars configured on Vercel
+- [ ] Vercel Analytics / basic monitoring
 
 ---
 
 ## Phase 4 — AI Agents
-**Goal:** First AI-powered features.
-**Estimated effort:** 1-2 weeks
+**Status: Mostly done (~85%)**
 
 ### 4.1 Infrastructure
 - [x] Anthropic Claude API client (`src/lib/agents/`)
-- [x] Streaming response handling (SSE via ReadableStream)
-- [x] Floating AgentPanel UI (`src/components/agents/AgentPanel`)
-- [x] `HoldingThesis` + `AgentInsight` DB tables (migration applied to production)
-- [x] TypeScript types (`src/types/agents.ts`)
-- [x] DB queries — thesis CRUD + insight persistence (`src/lib/db/queries/agents.ts`)
+- [x] Agent type definitions (`src/types/agents.ts`)
+- [x] DB tables: `holding_theses`, `agent_insights` (with FK constraints)
+- [x] DB queries: getAgentInsights, saveAgentInsights, getThesesForPortfolio, getLatestInsightAge
+- [x] Orchestrator — runs all agents in parallel
+- [x] Vitest tests for orchestrator
 
-### 4.2 Market Research Agent
-- [x] `src/lib/agents/market-agent.ts`
-- [x] Fetches 30-day price history per holding (Polygon / TASE)
-- [x] Calls Claude only for >3% movers (cost optimization)
-- [x] Returns `MarketUpdate[]` with trend + reason
+### 4.2 Market Research Agent (`src/lib/agents/market-agent.ts`)
+- [x] Fetches price history from Polygon + TASE for all holdings
+- [x] Sends significant movers (>3% change) to Claude for analysis
+- [x] Returns structured `MarketUpdate[]` per holding
 
-### 4.3 Investor Profile Agent (Rebalancing Advisor)
-- [x] `src/lib/agents/profile-agent.ts`
-- [x] Evaluates investment theses against market updates
-- [x] Chat system prompt — extracts structured theses from conversation
-- [x] `<thesis>` JSON block parsed and persisted automatically
+### 4.3 Rebalancing Agent (`src/lib/agents/rebalancing-agent.ts`)
+- [x] Pure function — no API call
+- [x] Detects drift vs target allocation per folder
+- [x] Warning at 5%, alert at 10%
+- [x] Returns `AllocationDrift[]` with severity
 
-### 4.4 Rebalancing / Strategy Agent
-- [x] `src/lib/agents/rebalancing-agent.ts` (pure function, no API call)
-- [x] Flags allocation drift ≥5% (warning) and ≥10% (alert)
+### 4.4 Investor Profile Agent (`src/lib/agents/profile-agent.ts`)
+- [x] Evaluates user-written theses against market updates
+- [x] Claude returns INTACT / REVIEW / BROKEN status per thesis
 
-### 4.5 Orchestrator
-- [x] `src/lib/agents/orchestrator.ts` — coordinates all 3 agents in parallel
-- [x] Vitest unit tests (mocked Claude + APIs, all passing)
-- [x] Portfolio health: `good` / `attention` / `alert`
+### 4.5 Agent API Routes
+- [x] `GET /api/agents/insights` — orchestrator with 24h cache + `?force=true` refresh
+- [x] `POST /api/agents/chat` — streaming chat with portfolio context (SSE)
+- [x] `POST /api/agents/thesis` — save/update investment thesis for a holding
 
-### 4.6 API Routes
-- [x] `GET /api/agents/insights` — runs orchestrator, 24h cache, force-refresh option
-- [x] `POST /api/agents/chat` — streaming SSE chat with Profile Agent
-- [x] `GET|POST /api/agents/thesis` — thesis CRUD per holding
+### 4.6 Agent UI
+- [x] `AgentPanel` — side panel on `/my-portfolio`
+- [x] `InsightsTab` — market updates, drift alerts, thesis evaluations
+- [x] `ChatTab` — streaming Claude chat about the portfolio
+- [x] SSE line buffer + abort on unmount
 
-### 4.7 Agent Panel UI
-- [x] Floating 🤖 button (bottom-right)
-- [x] Insights tab — severity cards (info/warning/alert), Analyze Portfolio button
-- [x] Chat tab — streaming chat, thesis auto-save, Hebrew/English
-- [x] Mounted in dashboard layout (all pages)
+### 4.7 Remaining
+- [ ] Dedicated Dividend Coach agent (growth, coverage, diversification analysis)
+- [ ] Full Portfolio Analyzer agent with tool-use (concentration risk, expense ratio flags)
 
 ---
 
-## Phase 5 — Visualize & Polish
-**Goal:** Richer analytics and mobile-ready.
-**Estimated effort:** 1-2 weeks
+## Phase 5 — Visualize, Market Data & Polish
+**Status: In progress (~50%)**
 
-### 5.1 Visualize Page
-- [x] `/visualize` page
-- [x] Treemap component
-- [x] Bubble chart (return vs size)
-- [x] Sector/industry breakdown
-- [ ] Geographic allocation map
+### 5.1 Home Page — Market Dashboard (`/`)
+- [x] Home split: market dashboard (`/`) vs. portfolio view (`/my-portfolio`)
+- [x] Performance chart + benchmark comparison
+- [x] **Market Movers panel** — top performers for Israel 🇮🇱, US 🇺🇸, International ETFs
+  - `/api/market-movers` + Yahoo Finance meta for names/flags
+  - Time-range synced with performance chart
+- [x] **P/E Multiples panel** — 30-year P/E history for 7 indices
+  - Static data in `src/data/pe-history.ts`
+  - Line chart per index + average reference line + legend
 
-### 5.2 XIRR
-- [ ] XIRR calculation (time-weighted with cash flows)
-- [ ] Show alongside simple return
+### 5.2 Visualize Page (`/visualize`)
+- [x] 4 tabs: Treemap, Rankings, By Folder, Geographic
+- [x] Treemap — holdings sized by value, colored by folder
+- [x] Rankings — sorted holdings with return bars + period filter
+- [x] By Folder — allocation donut per root folder
+- [x] Geographic — Israel / US / International breakdown
+- [x] Period filter: 1W, 1M, 6M, 1Y, All Time
+- [ ] Sector/industry breakdown (requires metadata enrichment)
 
-### 5.3 Mobile
+### 5.3 XIRR
+- [ ] Time-weighted return calculation with cash flows
+- [ ] Show alongside simple return on `/my-portfolio`
+
+### 5.4 Mobile
 - [ ] Responsive layout for all pages
-- [ ] Touch-friendly charts
-- [ ] Mobile navigation
+- [ ] Touch-friendly charts + mobile navigation drawer
 
-### 5.4 Dark Mode
-- [ ] Tailwind dark mode classes
-- [ ] System preference detection
+### 5.5 Dark Mode
+- [ ] Tailwind dark mode classes throughout
+- [ ] System preference detection (`prefers-color-scheme`)
 
-### 5.5 Multi-Portfolio
-- [ ] Portfolio switcher in nav
-- [ ] Per-portfolio settings
-
----
-
----
-
-## Phase 6 — Home / Market Overview
-**Goal:** Separate the home page into a market-oriented dashboard, add market data panels.
-**Completed:** 2026-05-20
-
-### 6.1 Home / Portfolio Split
-- [x] `/my-portfolio` — dedicated portfolio view (everything that was on the home page)
-- [x] `/` (Home) → `HomeDashboardClient` — market overview + performance chart
-- [x] My Portfolio added to TopNav (between Home and Invest)
-
-### 6.2 Extended Time Ranges
-- [x] Add `'1W'` and `'2Y'` to `TimeRange` union (`src/store/ui.ts`)
-- [x] `getTimeRangeCutoff` handles both new values (`src/lib/utils/index.ts`)
-- [x] `PerformanceChart` time-range buttons updated
-- [x] Unit tests added (51 total, all passing)
-
-### 6.3 Market Movers Panel
-- [x] `GET /api/market-movers?period=<TimeRange>` — Yahoo Finance public chart API, no API key
-- [x] Three ticker universes: 35 Israel (TASE), 50 US, 30 International ETFs
-- [x] Top-10 by % return per period, parallel fetch, cached 1h
-- [x] Company/index name extracted from `meta.shortName` — no extra API calls
-- [x] `useMarketMovers` hook (TanStack Query, staleTime 1h)
-- [x] `MarketMovers` + `MoverBox` components — Israel 🇮🇱 (emerald), US 🇺🇸 (blue), International 🌍 (violet)
-- [x] Loading skeletons (10 rows), empty state, gain/loss color coding
-
-### 6.4 P/E Multiples Panel
-- [x] `src/data/pe-history.ts` — 30 years of annual P/E data for 7 indices:
-  S&P 500, Nasdaq, India Nifty 50, TA-35, TA-90, TA-125, China Tech (CSI Tech)
-- [x] `PEMultiples` component — tab selector, Recharts `LineChart`
-- [x] Average reference line (amber `#f59e0b`, dashed) — computed in `useMemo`
-- [x] Median reference line (slate `#94a3b8`, dotted) — computed in `useMemo`
-- [x] Color dot on each tab: green if current P/E < historical average, red if above
-- [x] Legend row (P/E / ממוצע / מדיאן)
+### 5.6 Multi-Portfolio
+- [ ] Portfolio switcher dropdown in nav (cookie logic exists; UI missing)
+- [ ] Per-portfolio settings page
 
 ---
 
 ## Current Status
 
-| Phase | Status |
-|---|---|
-| Phase 1 — Core Tracker | 🟢 Complete (~98%) |
-| Phase 2 — Financial Features | 🟢 Complete (~95%) |
-| Phase 3 — Data & Import | 🟡 Mostly done (~90%) |
-| Phase 4 — AI Agents | 🟢 Complete |
-| Phase 5 — Visualize & Polish | 🟡 Partial (~50%) |
-| Phase 6 — Home / Market Overview | 🟢 Complete |
+| Phase | Status | Completion |
+|---|---|---|
+| Phase 1 — Core Tracker | 🟢 Done | ~95% |
+| Phase 2 — Financial Features | 🟡 Mostly done | ~90% |
+| Phase 3 — Data & Import | 🟡 Mostly done | ~90% |
+| Phase 4 — AI Agents | 🟡 Mostly done | ~85% |
+| Phase 5 — Visualize & Polish | 🟡 In progress | ~50% |
 
 ---
 
-### Open Items
+## Open Items (prioritized)
 
-**Phase 1:**
-- [ ] Cash accounts: allow balance update (edit dialog)
+### High priority
+- [ ] **Allocations drill-down** — expand folders → subfolders → holdings in the allocations table, set target % at every level. Plan fully written, 3 files to modify, no schema changes: `docs/superpowers/plans/2026-05-17-allocations-drilldown.md`
+- [ ] **Cash accounts** — show balance in holdings table + update balance dialog
+- [ ] **Dividend Yield KPI** — annual dividend data per holding (available in dividend cache)
 
-**Phase 2:**
-- [ ] Dividend Yield KPI on home page — requires annual dividend data per holding
+### Medium priority
+- [ ] **XIRR** — time-weighted return with cash flows alongside simple return
+- [ ] **Sector breakdown** — metadata enrichment from Polygon or static map
+- [ ] **Dividend Coach agent** — growth, coverage, diversification analysis
+- [ ] **CSV import** — broker/bank statement parsing
+- [ ] **Vercel Analytics** — basic monitoring
 
-**Phase 3:**
-- [ ] CSV parser for Donatello/broker bank statements
-- [ ] Vercel Analytics (basic monitoring)
+### Lower priority
+- [ ] **Mobile responsive** — all pages + touch charts + mobile nav
+- [ ] **Dark mode** — Tailwind dark classes + system preference
+- [ ] **Multi-portfolio switcher** — dropdown UI in nav
+- [ ] **Full Portfolio Analyzer agent** — tool-use, concentration risk, expense ratio flags
 
-**Phase 5:**
-- [ ] Geographic allocation map (`/visualize`)
-- [ ] XIRR calculation
-- [ ] Mobile-responsive layout
-- [ ] Dark mode
-- [ ] Multi-portfolio switcher + management page
+---
 
-**Tech debt:**
-- [ ] `buildPeriodDailyValues` duplicated in `HomeDashboardClient` and `HomeClient` — extract to shared util
-- [ ] P/E `currentPE` values are hardcoded — need periodic manual update when new annual data is published
-- [ ] Activity Log: add year filter + 3 donut summary charts (currently basic feed only)
+## Next recommended action
+**Allocations drill-down** — plan fully written, only 3 files to modify, no schema or type changes.
+See: `docs/superpowers/plans/2026-05-17-allocations-drilldown.md`

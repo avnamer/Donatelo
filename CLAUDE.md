@@ -105,15 +105,47 @@ cp .env.example .env.local
 ```
 
 ## Coding Conventions
-- **TypeScript strict mode** — no `any` types
-- **All financial values** stored as integers in agorot/cents to avoid float errors
-  - Display: divide by 100. Example: ₪41,776 stored as `4177600`
-- **Currency** — always explicit. Never assume ILS.
-- **Folder paths** — stored as materialized paths (e.g. `ישראל/מדדים`)
-- **Component naming** — PascalCase, co-located with their stories
-- **API routes** — always validate with Zod
-- **DB queries** — always go through `src/lib/db/` layer, never direct Prisma in components
-- **Calculations** — all formulas live in `src/lib/calculations/`, tested with Vitest
+
+### TypeScript
+- **Strict mode** — no `any` types, ever
+- **Import paths** — always use `@/` alias (`@/lib/...`, `@/components/...`)
+- **Types** — shared types live in `src/types/`; inline types only for local-only shapes
+
+### Money & Calculations
+- **All monetary values are `bigint` in agorot/cents** — never `number` for money
+  - ₪41,776 is stored and passed as `4177600n`
+  - Display: `formatCurrency(value, currency)` from `@/lib/calculations`
+  - Arithmetic: use `bigint` operators; convert to `number` only for percentages
+- **Never do financial math in components** — all formulas live in `src/lib/calculations/`
+- **`usePortfolioMetrics`** is the single source of truth for all portfolio values — never re-compute totals manually
+
+### Component Pattern (Server → Client)
+- **Server components** (`page.tsx`) fetch data from DB and pass it as props
+- **Client components** (`*Client.tsx`) receive props and handle rendering/interaction
+- **`'use client'`** only when the component uses hooks, events, or browser APIs
+- **Never call Prisma or DB queries from a Client component**
+- **Data fetching from APIs** (prices, FX) uses TanStack Query inside Client components
+
+### State
+- **Zustand** (`src/store/`) — UI state only: currency toggle, time range, sidebar open
+- **TanStack Query** — server data that needs caching/refetching (prices, market data)
+- **`useState`** — local ephemeral state (modal open, input value, loading flag)
+
+### Styling
+- **`cn()`** from `@/lib/utils` for all conditional classNames — never string concatenation
+- **Tailwind only** — no inline `style={{}}` except for dynamic values (e.g. folder color dot)
+- **shadcn/ui** for all base UI elements (Button, Dialog, Badge, etc.)
+
+### DB & API
+- **All DB calls go through `src/lib/db/queries/`** — never import Prisma directly in components or routes
+- **API routes** always validate input with Zod before touching the DB
+- **Server Actions** (`'use server'`) for form mutations; use `revalidatePath` after writes
+
+### Code Style
+- **Section dividers** in longer files: `// ─── Section Name ─────────────────`
+- **Component file order**: imports → types → sub-components → main export
+- **No default exports for components** — use named exports (`export function Foo`)
+- **Calculations** — all formulas in `src/lib/calculations/`, covered by Vitest tests
 
 ## Key Business Rules
 1. All values displayed in ILS unless user explicitly switches to USD

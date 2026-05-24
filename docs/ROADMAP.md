@@ -69,7 +69,7 @@ then layer on features. Each phase ships something usable.
 ### 1.9 Cash Accounts
 - [x] Add ILS / USD cash account — AddCashDialog + /api/cash-accounts route
 - [ ] Update balance (edit dialog)
-- [ ] Show in holdings table
+- [x] Show in holdings table
 
 ---
 
@@ -93,10 +93,12 @@ then layer on features. Each phase ships something usable.
 
 ### 2.3 Performance Chart
 - [x] Indexed chart (normalized to 100) on Home page
-- [x] Time ranges: 3M, 6M, 9M, 1Y, All
-- [x] Benchmark comparison: S&P 500 (SPY), MSCI ACWI
+- [x] Time ranges: 1W, 1M, 3M, 6M, YTD, 1Y, 2Y, 3Y, ALL (1W + 2Y added in Phase 6)
+- [x] Benchmark comparison: S&P 500 (SPY), MSCI ACWI, TA-125
 - [x] "Simulated performance" label
 - [x] Recharts area chart with smooth curve
+- [x] Dual-series tooltip — shows both portfolio and benchmark on every hover point
+- [x] Period return calculated with linear interpolation (no historical portfolio prices)
 
 ### 2.4 Dividends Page
 - [x] `/dividends` page
@@ -139,7 +141,7 @@ then layer on features. Each phase ships something usable.
 - [x] `/explore` page
 - [x] Seed noteworthy profiles (data from Donatello)
 - [x] Profile detail view
-- [x] "Use as Template" functionality — POST /api/explore/[id]/use-template creates root folders with colors + target allocations
+- [x] "Use as Template" — POST /api/explore/[id]/use-template creates root folders with colors + target allocations
 
 ### 3.4 Production Hardening
 - [x] Error boundary (`error.tsx`) — catches dashboard-level errors with friendly UI
@@ -147,7 +149,10 @@ then layer on features. Each phase ships something usable.
 - [x] Empty states — HoldingsTree, PerformanceChart, AllocationDonut
 - [x] Price unavailable fallback — stale multi-day cache + `unavailable` flag in API response
 - [x] Rate limit handling for Polygon.io — retry with exponential backoff (1 s → 2 s → 4 s), respects Retry-After header
-- [ ] Vercel deployment
+- [x] Vercel deployment — https://donatelo.vercel.app (deploy via `npx vercel --prod`)
+- [x] RLS policies applied to all 10 tables in production DB
+- [x] Google OAuth configured (Google Cloud Console + Supabase provider enabled)
+- [x] All 11 env vars set in Vercel production environment
 - [ ] Basic monitoring (Vercel Analytics)
 
 ---
@@ -157,32 +162,44 @@ then layer on features. Each phase ships something usable.
 **Estimated effort:** 1-2 weeks
 
 ### 4.1 Infrastructure
-- [ ] Anthropic Claude API client (`src/lib/agents/`)
-- [ ] Agent tool definitions (see ARCHITECTURE.md)
-- [ ] Streaming response handling (Vercel AI SDK)
-- [ ] Chat UI component (`src/components/agents/AgentPanel`)
+- [x] Anthropic Claude API client (`src/lib/agents/`)
+- [x] Streaming response handling (SSE via ReadableStream)
+- [x] Floating AgentPanel UI (`src/components/agents/AgentPanel`)
+- [x] `HoldingThesis` + `AgentInsight` DB tables (migration applied to production)
+- [x] TypeScript types (`src/types/agents.ts`)
+- [x] DB queries — thesis CRUD + insight persistence (`src/lib/db/queries/agents.ts`)
 
-### 4.2 Portfolio Analyzer Agent
-- [ ] Endpoint: `POST /api/agents/analyzer`
-- [ ] Tools: getPortfolioSummary, getFolderDetails, getHoldingDetails
-- [ ] Explains current state in plain language
-- [ ] Flags: concentration risk, underperforming holdings, high expense ratios
+### 4.2 Market Research Agent
+- [x] `src/lib/agents/market-agent.ts`
+- [x] Fetches 30-day price history per holding (Polygon / TASE)
+- [x] Calls Claude only for >3% movers (cost optimization)
+- [x] Returns `MarketUpdate[]` with trend + reason
 
-### 4.3 Rebalancing Advisor Agent
-- [ ] Endpoint: `POST /api/agents/rebalancer`
-- [ ] Tools: calculateRebalance, getMarketData
-- [ ] Suggests specific trades to reach target allocations
-- [ ] Considers tax implications (realized gains)
+### 4.3 Investor Profile Agent (Rebalancing Advisor)
+- [x] `src/lib/agents/profile-agent.ts`
+- [x] Evaluates investment theses against market updates
+- [x] Chat system prompt — extracts structured theses from conversation
+- [x] `<thesis>` JSON block parsed and persisted automatically
 
-### 4.4 Dividend Coach Agent
-- [ ] Endpoint: `POST /api/agents/dividends`
-- [ ] Tools: getDividendHistory, getDividendForecast
-- [ ] Analyzes dividend growth, coverage, diversification
+### 4.4 Rebalancing / Strategy Agent
+- [x] `src/lib/agents/rebalancing-agent.ts` (pure function, no API call)
+- [x] Flags allocation drift ≥5% (warning) and ≥10% (alert)
 
-### 4.5 Market Researcher Agent
-- [ ] Endpoint: `POST /api/agents/researcher`
-- [ ] Tools: getHoldingDetails, searchMarketData
-- [ ] On-demand research about a specific holding
+### 4.5 Orchestrator
+- [x] `src/lib/agents/orchestrator.ts` — coordinates all 3 agents in parallel
+- [x] Vitest unit tests (mocked Claude + APIs, all passing)
+- [x] Portfolio health: `good` / `attention` / `alert`
+
+### 4.6 API Routes
+- [x] `GET /api/agents/insights` — runs orchestrator, 24h cache, force-refresh option
+- [x] `POST /api/agents/chat` — streaming SSE chat with Profile Agent
+- [x] `GET|POST /api/agents/thesis` — thesis CRUD per holding
+
+### 4.7 Agent Panel UI
+- [x] Floating 🤖 button (bottom-right)
+- [x] Insights tab — severity cards (info/warning/alert), Analyze Portfolio button
+- [x] Chat tab — streaming chat, thesis auto-save, Hebrew/English
+- [x] Mounted in dashboard layout (all pages)
 
 ---
 
@@ -191,10 +208,11 @@ then layer on features. Each phase ships something usable.
 **Estimated effort:** 1-2 weeks
 
 ### 5.1 Visualize Page
-- [ ] `/visualize` page
-- [ ] Treemap component
-- [ ] Sector/industry breakdown
-- [ ] Geographic allocation
+- [x] `/visualize` page
+- [x] Treemap component
+- [x] Bubble chart (return vs size)
+- [x] Sector/industry breakdown
+- [ ] Geographic allocation map
 
 ### 5.2 XIRR
 - [ ] XIRR calculation (time-weighted with cash flows)
@@ -215,29 +233,76 @@ then layer on features. Each phase ships something usable.
 
 ---
 
+---
+
+## Phase 6 — Home / Market Overview
+**Goal:** Separate the home page into a market-oriented dashboard, add market data panels.
+**Completed:** 2026-05-20
+
+### 6.1 Home / Portfolio Split
+- [x] `/my-portfolio` — dedicated portfolio view (everything that was on the home page)
+- [x] `/` (Home) → `HomeDashboardClient` — market overview + performance chart
+- [x] My Portfolio added to TopNav (between Home and Invest)
+
+### 6.2 Extended Time Ranges
+- [x] Add `'1W'` and `'2Y'` to `TimeRange` union (`src/store/ui.ts`)
+- [x] `getTimeRangeCutoff` handles both new values (`src/lib/utils/index.ts`)
+- [x] `PerformanceChart` time-range buttons updated
+- [x] Unit tests added (51 total, all passing)
+
+### 6.3 Market Movers Panel
+- [x] `GET /api/market-movers?period=<TimeRange>` — Yahoo Finance public chart API, no API key
+- [x] Three ticker universes: 35 Israel (TASE), 50 US, 30 International ETFs
+- [x] Top-10 by % return per period, parallel fetch, cached 1h
+- [x] Company/index name extracted from `meta.shortName` — no extra API calls
+- [x] `useMarketMovers` hook (TanStack Query, staleTime 1h)
+- [x] `MarketMovers` + `MoverBox` components — Israel 🇮🇱 (emerald), US 🇺🇸 (blue), International 🌍 (violet)
+- [x] Loading skeletons (10 rows), empty state, gain/loss color coding
+
+### 6.4 P/E Multiples Panel
+- [x] `src/data/pe-history.ts` — 30 years of annual P/E data for 7 indices:
+  S&P 500, Nasdaq, India Nifty 50, TA-35, TA-90, TA-125, China Tech (CSI Tech)
+- [x] `PEMultiples` component — tab selector, Recharts `LineChart`
+- [x] Average reference line (amber `#f59e0b`, dashed) — computed in `useMemo`
+- [x] Median reference line (slate `#94a3b8`, dotted) — computed in `useMemo`
+- [x] Color dot on each tab: green if current P/E < historical average, red if above
+- [x] Legend row (P/E / ממוצע / מדיאן)
+
+---
+
 ## Current Status
 
 | Phase | Status |
 |---|---|
-| Phase 1 — Core Tracker | 🟢 Complete (~95%) |
+| Phase 1 — Core Tracker | 🟢 Complete (~98%) |
 | Phase 2 — Financial Features | 🟢 Complete (~95%) |
 | Phase 3 — Data & Import | 🟡 Mostly done (~90%) |
-| Phase 4 — AI Agents | 🔴 Not started |
-| Phase 5 — Polish | 🔴 Not started |
+| Phase 4 — AI Agents | 🟢 Complete |
+| Phase 5 — Visualize & Polish | 🟡 Partial (~50%) |
+| Phase 6 — Home / Market Overview | 🟢 Complete |
 
-### Remaining open items
+---
+
+### Open Items
+
 **Phase 1:**
-- [ ] Cash accounts: show balance in holdings table, allow balance update
+- [ ] Cash accounts: allow balance update (edit dialog)
 
 **Phase 2:**
 - [ ] Dividend Yield KPI on home page — requires annual dividend data per holding
 
-**Phase 3 (remaining):**
+**Phase 3:**
 - [ ] CSV parser for Donatello/broker bank statements
-- [ ] Vercel deployment + basic monitoring (Vercel Analytics)
+- [ ] Vercel Analytics (basic monitoring)
 
-**Phase 4:** AI agents (infrastructure + 4 agents)
+**Phase 5:**
+- [ ] Geographic allocation map (`/visualize`)
+- [ ] XIRR calculation
+- [ ] Mobile-responsive layout
+- [ ] Dark mode
+- [ ] Multi-portfolio switcher + management page
 
-**Phase 5:** Visualize (treemap done, bubble/sector/geo missing), XIRR, mobile, dark mode, multi-portfolio
-
-**Next action:** Phase 4 — AI agents
+**Tech debt:**
+- [ ] `buildPeriodDailyValues` duplicated in `HomeDashboardClient` and `HomeClient` — extract to shared util
+- [ ] P/E `currentPE` values are hardcoded — need periodic manual update when new annual data is published
+- [ ] Activity Log: add year filter + 3 donut summary charts (currently basic feed only)

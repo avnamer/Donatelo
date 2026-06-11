@@ -98,11 +98,12 @@ export async function GET(request: NextRequest) {
     })
   )
 
+  type AlertData = Parameters<typeof upsertDipAlerts>[0][number]
   const newAlerts = results
-    .filter((r): r is PromiseFulfilledResult<NonNullable<Awaited<ReturnType<typeof computePeaks>> extends null ? never : object>> =>
+    .filter((r): r is PromiseFulfilledResult<AlertData> =>
       r.status === 'fulfilled' && r.value != null
     )
-    .map((r) => r.value) as Parameters<typeof upsertDipAlerts>[0]
+    .map((r) => r.value)
 
   await upsertDipAlerts(newAlerts)
   await deleteStaleDipAlerts(portfolioId, newAlerts.map((a) => a.holdingId))

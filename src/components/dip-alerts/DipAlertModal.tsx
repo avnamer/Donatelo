@@ -101,7 +101,7 @@ export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
               <Line
                 type="monotone"
                 dataKey="price"
-                stroke="hsl(var(--destructive))"
+                stroke="#ef4444"
                 strokeWidth={2}
                 dot={false}
               />

@@ -105,7 +105,7 @@ export function DipAlertCard({ alert, onClick }: DipAlertCardProps) {
               <Line
                 type="monotone"
                 dataKey="price"
-                stroke="hsl(var(--destructive))"
+                stroke="#ef4444"
                 strokeWidth={1.5}
                 dot={false}
               />

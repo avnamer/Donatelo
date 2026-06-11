@@ -48,14 +48,24 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  const holdings = portfolio.folders.flatMap((f) =>
-    f.holdings.map((h) => ({
-      id: h.id,
-      ticker: h.tickerSymbol,
-      name: h.name,
-      exchange: h.exchange,
-    }))
-  )
+  // Deduplicate by ticker — if same stock appears in multiple folders,
+  // keep the first occurrence (avoid duplicate alert cards)
+  const seenTickers = new Set<string>()
+  const holdings = portfolio.folders
+    .flatMap((f) =>
+      f.holdings
+        .map((h) => ({
+          id: h.id,
+          ticker: h.tickerSymbol,
+          name: h.name,
+          exchange: h.exchange,
+        }))
+    )
+    .filter((h) => {
+      if (seenTickers.has(h.ticker)) return false
+      seenTickers.add(h.ticker)
+      return true
+    })
 
   const now = new Date()
 

@@ -188,6 +188,13 @@ then layer on features. Each phase ships something usable.
 - [x] **P/E Multiples panel** — 30-year P/E history for 7 indices
   - Static data in `src/data/pe-history.ts`
   - Line chart per index + average reference line + legend
+- [x] **Buy the Dip alerts** — holdings down ≥ 10% from peak
+  - `dip_alerts` table, `/api/dip-alerts` with same-day cache
+  - Global toggle: 52w / Historical / 90d (updates all cards at once)
+  - Backfills 52w price history from Polygon/Yahoo on first compute
+  - Cards: drop %, sparkline, AI suggestion (Claude Haiku)
+  - Modal: full-size chart filtered by selected time window
+  - Sorted by biggest drop first, deduped by ticker
 
 ### 5.2 Visualize Page (`/visualize`)
 - [x] 4 tabs: Treemap, Rankings, By Folder, Geographic
@@ -224,7 +231,7 @@ then layer on features. Each phase ships something usable.
 | Phase 2 — Financial Features | 🟡 Mostly done | ~90% |
 | Phase 3 — Data & Import | 🟡 Mostly done | ~90% |
 | Phase 4 — AI Agents | 🟡 Mostly done | ~85% |
-| Phase 5 — Visualize & Polish | 🟡 In progress | ~50% |
+| Phase 5 — Visualize & Polish | 🟡 In progress | ~60% |
 
 ---
 

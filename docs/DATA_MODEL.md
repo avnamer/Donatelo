@@ -16,7 +16,8 @@ users (Supabase Auth)
         │     └── holdings
         │           └── lots
         ├── cash_accounts
-        └── transactions
+        ├── transactions
+        └── dip_alerts   (per portfolio, 1 row per unique ticker)
 
 price_cache        (shared, not per-user)
 dividend_cache     (shared, not per-user)
@@ -149,12 +150,24 @@ This is the source of truth for the Activity page.
 
 **Transaction Types:**
 ```
-SECURITY_BUY      - buying shares
-SECURITY_SELL     - selling shares (triggers realized gain calc)
-DIVIDEND          - dividend payment received
-CASH_DEPOSIT      - cash added to account
-CASH_WITHDRAWAL   - cash removed from account
+SECURITY_BUY      - buying shares (linked to a lot via lot_id)
+SECURITY_SELL     - selling shares (linked to lot; stores realized_gain)
+DIVIDEND          - dividend payment received (linked to holding)
+CASH_DEPOSIT      - cash added to account (linked to cash_account)
+CASH_WITHDRAWAL   - cash removed from account (linked to cash_account)
+COMMISSION        - broker fee / transaction cost (optional holding_id)
+FX_CONVERSION     - foreign-exchange conversion; amount = received amount,
+                    currency = received currency; notes stores "from" side
+                    (e.g. "Converted ₪10,000 → USD") until schema adds
+                    from_amount / from_currency fields
 ```
+
+**Notes on lot_id linkage:**
+- Every `SECURITY_BUY` and `SECURITY_SELL` row should have `lot_id` set.
+- Orphaned rows (lot_id = null) are cleaned up automatically by `syncActivityData`
+  on the Activity page load.
+- Bonds are securities — they use `SECURITY_BUY` / `SECURITY_SELL` with
+  the bond ticker as the holding. No separate bond type is needed.
 
 **Indexes:** portfolio_id, date DESC, type, holding_id
 
@@ -212,6 +225,37 @@ Currency exchange rates, refreshed daily.
 | fetched_at | timestamptz | |
 
 **Unique:** (from_currency, to_currency, rate_date)
+
+---
+
+### `dip_alerts`
+Per-portfolio cache of "Buy the Dip" signals. One row per unique ticker per portfolio.
+Recomputed on demand (same-day cache) via `GET /api/dip-alerts?force=true`.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | cuid PK | |
+| user_id | text FK → auth.users | |
+| portfolio_id | uuid FK → portfolios | onDelete: Cascade |
+| holding_id | uuid FK → holdings | onDelete: Cascade |
+| ticker | text | e.g. "AAPL", "ETOR" |
+| name | text | e.g. "Apple Inc." |
+| current_price | float | current price in native currency (÷100 from price_cache) |
+| high_52w | float | max price in last 365 days from price_cache |
+| high_ath | float NULL | max price across all available cache history (best-effort) |
+| high_90d | float | max price in last 90 days from price_cache |
+| drop_from_52w | float | negative fraction: (current − high_52w) / high_52w |
+| drop_from_ath | float NULL | negative fraction from ATH (null if ATH unavailable) |
+| drop_from_90d | float | negative fraction: (current − high_90d) / high_90d |
+| price_history | jsonb | 52-week daily prices: `[{date: "YYYY-MM-DD", price: float}]` |
+| ai_suggestion | text NULL | one-sentence Claude buy consideration |
+| computed_at | timestamptz | when this row was last computed |
+
+**Unique:** (holding_id, portfolio_id)
+**Index:** (portfolio_id, computed_at DESC)
+
+**Filter rule:** only holdings where `drop_from_52w ≤ −0.10` are stored.
+Holdings with the same ticker in multiple folders appear as a single row (deduplicated by ticker).
 
 ---
 
@@ -326,3 +370,17 @@ Arithmetic: integer math, no floating point errors
 - Lots give you current cost basis efficiently
 - Transactions give you the full activity log
 - They're linked (a SELL transaction updates a lot AND creates a transaction row)
+
+---
+
+## Activity Data Sync Functions
+
+Three helper functions in `src/lib/db/queries/transactions.ts` keep the
+`transactions` table consistent with `lots`:
+
+| Function | Purpose |
+|---|---|
+| `syncActivityData(portfolioId, userId)` | **Main entry point** called on every Activity page load. Runs two fast `COUNT` queries; only writes to DB when dirty. Calls dedup then backfill if needed. |
+| `deduplicateTransactions(portfolioId, userId)` | Removes duplicate rows: same `lot_id` on multiple rows of the same type, unlinked rows shadowed by a linked row for the same holding+date, and multiple unlinked rows for the same holding+date. |
+| `backfillTransactionsFromLots(portfolioId, userId)` | Creates missing `SECURITY_BUY` / `SECURITY_SELL` rows for any lots not yet linked to a transaction. Links existing orphaned rows (lot_id = null) to their lot instead of creating duplicates. |
+| `hasUnlinkedLots(portfolioId, userId)` | Fast pre-check: returns true if any lot has no linked `SECURITY_BUY` transaction. Used by `syncActivityData` to skip backfill when unnecessary. |

@@ -35,21 +35,37 @@
 │ ┌─ Performance Chart (area) ─────┐  │ 46.6%    │
 │ │  (indexed to 100)              │  │ RETURN   │
 │ └────────────────────────────────┘  │          │
-│ * Simulated performance             │ ₪154,411 │
-├─────────────────────────────────────┤ GAIN     │
+│                                     │ ₪154,411 │
+│ 📉 Buy the Dip  [22] [52w|Hist|90d] │ GAIN     │
+│ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐   │          │
+│ │ETOR │ │PYPL │ │CEG  │ │ ... │   │ 0.21%    │
+│ │-43% │ │-48% │ │-40% │ │     │   │ EXP.RATIO│
+│ │chart│ │chart│ │chart│ │     │   │          │
+│ └─────┘ └─────┘ └─────┘ └─────┘   │ 0.15%    │
+├─────────────────────────────────────┤ DIV.YIELD│
 │ [Folder Name]              [Add ▼]  │          │
-│ View: Default ▼                     │ 0.21%    │
-│                                     │ EXP.RATIO│
-│ Name        Value  Gain/Ret  Act/Tgt│          │
-│ ▼ Folder A  ...    ...       .../..%│ 0.15%    │
-│   Folder B  ...    ...       .../..%│ DIV.YIELD│
-│   Cash ILS  ...           1.16%     │          │
-│   Cash USD  ...           0.10%     └──────────┤
+│ View: Default ▼                     └──────────┤
 │                                     │ Donut    │
-│                                     │ Chart    │
-│                                     │ 72.93%   │
+│ Name        Value  Gain/Ret  Act/Tgt│ Chart    │
+│ ▼ Folder A  ...    ...       .../..%│ 72.93%   │
+│   Folder B  ...    ...       .../..%│          │
+│   Cash ILS  ...           1.16%     │          │
+│   Cash USD  ...           0.10%     │          │
 └─────────────────────────────────────┴──────────┘
 ```
+
+**Buy the Dip section:**
+- Appears below the performance chart
+- Shows all portfolio holdings that have dropped ≥ 10% from their 52-week high
+- Global toggle: **52w** (52-week high) | **Historical** (all available cache) | **90d** (90-day high)
+- Switching the toggle updates all cards simultaneously: drop %, high price label, sparkline window
+- Each card: ticker, drop % badge, current price, period high, 90-day sparkline, AI one-liner
+- Clicking a card opens a modal with a larger chart and the same toggle
+- Refresh button (↻) forces recomputation — backfills 52w price history from Polygon/Yahoo if cache is sparse
+- Same-day cache: computed once per day, instant on return visits
+- Cards sorted by drop % descending (biggest dip first)
+- Deduplication: if same ticker appears in multiple folders, shown once
+- Data source: `dip_alerts` table + `price_cache` backfill via `/api/dip-alerts`
 
 **Behavior:**
 - Clicking a folder name navigates to that folder's page (same layout, filtered)
@@ -217,33 +233,73 @@ Name                Current   Target
 
 ### `/activity` — Activity Log
 
-**Purpose:** Full history of all transactions.
+**Purpose:** Full history of all transactions — buys, sells, dividends,
+deposits, withdrawals, commissions, and FX conversions.
+
+**Files:**
+- Server component: `src/app/(dashboard)/activity/page.tsx`
+- Client component: `src/components/activity/ActivityClient.tsx`
 
 **Layout:**
 ```
-┌── Summary ────────┬── Accounts Activity ─────────────────────────┐
-│ Securities        │ [2026▼] [Actions: All▼]                        │
-│ # Buys: 4         │                                                 │
-│ # Sells: 1        │ ┌─Donut 1──┐  ┌─Donut 2──┐  ┌─Donut 3───┐   │
-│ Sum Buys: ₪14,815 │ │₪18,805   │  │-₪4,122   │  │₪90        │   │
-│ Sum Sells: ₪4,122 │ │Net Inflow│  │Outflow   │  │Dividends  │   │
-│ Net Inflow: ₪10,693│ │by Folder │  │by Folder │  │by Folder  │   │
-│ Realized: ₪2,477  │ └──────────┘  └──────────┘  └───────────┘   │
-│                   ├────────────────────────────────────────────────┤
-│ Assets & Cash     │ Activity Log                                    │
-│ # Transactions: 2 │ Date      Action          Holding        Amt   │
-│ Net Inflow: ₪3,990│ Apr 9     Dividend 💵     VICI           $10   │
-│                   │           22 shares × $0.45              │
-│ Dividends         │ Jan 14    Security Bought 💸 ETOR        $1,752│
-│ # Distributions: 9│           56 shares × 31.28              │
-│ Total Collected:  │ Jan 14    Security Sold 🛒  604611       ₪4,122│
-│ Post-Tax:         │           Realized: ₪2,477               │
-└───────────────────┴────────────────────────────────────────────────┘
+Activity
+123 transactions
+
+┌─ Summary cards (all-time totals, always visible) ──────────────────┐
+│ [Trades donut]  [Dividends donut]  [Cash flows donut]              │
+│ [Invested ₪X]   [Deposited ₪X]    [Dividends ₪X]  [Commissions ₪X]│
+└────────────────────────────────────────────────────────────────────┘
+
+[All 123] [Buys 45] [Sells 12] [Dividends 8] [Deposits 4]
+[Withdrawals 2] [Commissions 30] [FX 22]
+
+┌─ Transaction table ─────────────────────────────────────────────────┐
+│ Date       Type         Security/Account  Shares        Amount      │
+│ 2026-01-14 🟢 Buy       AAPL Apple Inc.   10           +₪5,240      │
+│                                           @ ₪524.00                 │
+│ 2025-12-03 🔴 Sell      MSFT Microsoft    5            −₪2,100      │
+│                                           @ ₪420.00    +₪300 gain  │
+│ 2025-11-01 🟣 Dividend  VICI              —             +$10.00     │
+│ 2025-10-15 🟠 Commission AAPL             —             −₪18.00     │
+│ 2025-09-01 🔵 FX        —                —              $2,700.00  │
+├─────────────────────────────────────────────────────────────────────┤
+│ 1–50 of 123                          [‹] [1] [2] [3] [›]           │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Filters:**
-- Year: 2023 | 2024 | 2025 | 2026 | Custom
-- Action types: All | Security Bought | Security Sold | Asset Deposit | Asset Withdrawal | Dividend
+**Transaction types displayed:**
+
+| Type | Badge color | Amount sign | Notes column |
+|---|---|---|---|
+| `SECURITY_BUY` | Green | + green | Notes from lot |
+| `SECURITY_SELL` | Red | − red + realized gain line | Notes from lot |
+| `DIVIDEND` | Indigo | + green | Notes |
+| `CASH_DEPOSIT` | Green | + green | Account name |
+| `CASH_WITHDRAWAL` | Amber | − red | Account name |
+| `COMMISSION` | Orange | − red | Notes (e.g. broker name) |
+| `FX_CONVERSION` | Sky blue | neutral | Notes (e.g. "₪10,000 → USD") |
+
+Bonds use `SECURITY_BUY` / `SECURITY_SELL` — the holding's ticker/name
+identifies it as a bond. No separate bond type is needed.
+
+**URL params (server-driven):**
+- `?type=SECURITY_BUY` — filter by transaction type
+- `?page=2` — pagination (50 rows per page)
+- Changing a filter tab navigates to `?type=X&page=1`
+
+**Data flow:**
+1. `syncActivityData(portfolioId, userId)` runs on every page load:
+   - If no duplicates and no unlinked lots → returns immediately (2 COUNT queries, zero writes)
+   - If duplicates found → runs `deduplicateTransactions` (deletes extra rows)
+   - If unlinked lots found → runs `backfillTransactionsFromLots` (creates/links missing rows)
+2. `getTransactions(portfolioId, userId, { page, type })` fetches current page
+3. `getTransactionSummary(portfolioId, userId)` fetches all-time totals (for summary cards — always unfiltered)
+
+**Future (not yet implemented):**
+- Date range filter (this year / last 12 months / custom)
+- Manual transaction entry UI for COMMISSION / DIVIDEND / FX_CONVERSION / CASH_DEPOSIT
+- `FX_CONVERSION` schema extension: `from_amount` + `from_currency` fields
+- CSV export of filtered activity
 
 ---
 

@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import type { DipAlertRow } from '@/lib/db/queries/dip-alerts'
 import type { PeakView } from './DipAlertsSection'
@@ -17,6 +18,17 @@ interface DipAlertCardProps {
 }
 
 export function DipAlertCard({ alert, view, onClick }: DipAlertCardProps) {
+  // Filter sparkline data to match the selected time window
+  const chartData = useMemo(() => {
+    if (view === '90d') {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - 90)
+      const cutoffStr = cutoff.toISOString().split('T')[0]
+      return alert.priceHistory.filter((p) => p.date >= cutoffStr)
+    }
+    return alert.priceHistory // 52w or Historical — full stored history
+  }, [alert.priceHistory, view])
+
   const peakMap: Record<PeakView, number | null> = {
     '52w': alert.high52w,
     ath: alert.highATH,
@@ -54,11 +66,11 @@ export function DipAlertCard({ alert, view, onClick }: DipAlertCardProps) {
         <span>{VIEW_HIGH_LABEL[view]} <span className="text-foreground font-medium">{selectedPeak.toFixed(2)}</span></span>
       </div>
 
-      {/* Sparkline */}
-      {alert.priceHistory.length > 1 && (
+      {/* Sparkline — filtered to selected time window */}
+      {chartData.length > 1 && (
         <div className="h-12">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={alert.priceHistory}>
+            <LineChart data={chartData}>
               <Line
                 type="monotone"
                 dataKey="price"

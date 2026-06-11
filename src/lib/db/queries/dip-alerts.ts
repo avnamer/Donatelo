@@ -24,7 +24,7 @@ export async function getDipAlertsForPortfolio(
 ): Promise<DipAlertRow[]> {
   const rows = await prisma.dipAlert.findMany({
     where: { portfolioId },
-    orderBy: { dropFrom52w: 'desc' },
+    orderBy: { dropFrom52w: 'asc' }, // asc = most negative first = biggest drops first
   })
   return rows.map((r) => ({
     ...r,

@@ -105,7 +105,10 @@ export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 10 }}
-                tickFormatter={(d: string) => d.slice(5)}
+                tickFormatter={(d: string) => {
+                  const [year, month, day] = d.split('-')
+                  return `${parseInt(day)}/${parseInt(month)}/${year.slice(2)}`
+                }}
                 interval="preserveStartEnd"
               />
               <YAxis

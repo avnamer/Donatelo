@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
   const results = await Promise.allSettled(
     holdings.map(async (holding) => {
-      const peaks = await computePeaks(holding.ticker)
+      const peaks = await computePeaks(holding.ticker, holding.exchange)
       if (!peaks) return null
       if (peaks.dropFrom52w > DIP_THRESHOLD) return null
 

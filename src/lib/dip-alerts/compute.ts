@@ -1,4 +1,6 @@
-import { getHistoricalPrices } from '@/lib/db/queries'
+import { getHistoricalPrices, upsertPrice } from '@/lib/db/queries'
+import { fetchUSPriceHistory } from '@/lib/api/polygon'
+import { fetchTasePriceHistory } from '@/lib/api/tase'
 
 export interface PeakData {
   high52w: number
@@ -11,15 +13,55 @@ export interface PeakData {
   priceHistory90d: Array<{ date: string; price: number }>
 }
 
+// Minimum trading days expected in 52 weeks (accounting for weekends/holidays)
+const MIN_52W_ENTRIES = 180
+
+/**
+ * Ensure 52w price history is populated in the cache.
+ * If we have fewer than MIN_52W_ENTRIES, fetch from external API and backfill.
+ */
+async function ensurePriceHistory(
+  tickerSymbol: string,
+  exchange: string,
+  from: Date,
+  to: Date
+): Promise<void> {
+  const existing = await getHistoricalPrices(tickerSymbol, from, to)
+  if (existing.length >= MIN_52W_ENTRIES) return // cache is sufficient
+
+  const history =
+    exchange === 'TASE'
+      ? await fetchTasePriceHistory(tickerSymbol, from, to)
+      : await fetchUSPriceHistory(tickerSymbol, from, to)
+
+  if (history.length === 0) return
+
+  // Store all fetched entries in PriceCache (upsert = no duplicates)
+  await Promise.allSettled(
+    history.map((entry) =>
+      upsertPrice({
+        tickerSymbol,
+        exchange,
+        price: entry.price,
+        currency: entry.currency,
+        priceDate: entry.date,
+      })
+    )
+  )
+}
+
 export async function computePeaks(
-  tickerSymbol: string
+  tickerSymbol: string,
+  exchange: string
 ): Promise<PeakData | null> {
   const today = new Date()
 
   const from52w = new Date(today)
   from52w.setFullYear(from52w.getFullYear() - 1)
 
-  // Fetch 52w history (covers 90d as a subset)
+  // Backfill cache with 52w of data if needed
+  await ensurePriceHistory(tickerSymbol, exchange, from52w, today)
+
   const history52w = await getHistoricalPrices(tickerSymbol, from52w, today)
   if (history52w.length === 0) return null
 
@@ -43,19 +85,17 @@ export async function computePeaks(
   const currentPrice = prices52w[prices52w.length - 1]
   const high52w = Math.max(...prices52w)
   const high90d = prices90d.length > 0 ? Math.max(...prices90d) : high52w
-  // Best-effort historical high from all cached data — may not be true ATH
   const highATH = pricesAll.length > 0 ? Math.max(...pricesAll) : null
 
   const dropFrom52w = (currentPrice - high52w) / high52w
   const dropFrom90d = (currentPrice - high90d) / high90d
   const dropFromATH = highATH != null ? (currentPrice - highATH) / highATH : null
 
-  // Store full 52w price history — modal filters to 90d subset client-side
-  const priceHistory90d = history52w
-    .map((r) => ({
-      date: r.priceDate.toISOString().split('T')[0],
-      price: toFloat(r.price),
-    }))
+  // Store full 52w price history — modal/card filter to 90d subset client-side
+  const priceHistory90d = history52w.map((r) => ({
+    date: r.priceDate.toISOString().split('T')[0],
+    price: toFloat(r.price),
+  }))
 
   return {
     high52w,

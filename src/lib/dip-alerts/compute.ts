@@ -23,10 +23,6 @@ export async function computePeaks(
   const history52w = await getHistoricalPrices(tickerSymbol, from52w, today)
   if (history52w.length === 0) return null
 
-  // Fetch all available history for ATH
-  const epochStart = new Date('1970-01-01')
-  const historyAll = await getHistoricalPrices(tickerSymbol, epochStart, today)
-
   const cutoff90d = new Date(today)
   cutoff90d.setDate(cutoff90d.getDate() - 90)
 
@@ -36,18 +32,19 @@ export async function computePeaks(
   const prices90d = history52w
     .filter((r) => r.priceDate >= cutoff90d)
     .map((r) => toFloat(r.price))
-  const pricesAll = historyAll.map((r) => toFloat(r.price))
 
   if (prices52w.length === 0) return null
 
   const currentPrice = prices52w[prices52w.length - 1]
   const high52w = Math.max(...prices52w)
   const high90d = prices90d.length > 0 ? Math.max(...prices90d) : high52w
-  const highATH = pricesAll.length > 0 ? Math.max(...pricesAll) : null
+
+  // ATH not available from PriceCache (only stores recently fetched data, not true historical ATH)
+  const highATH: number | null = null
+  const dropFromATH: number | null = null
 
   const dropFrom52w = (currentPrice - high52w) / high52w
   const dropFrom90d = (currentPrice - high90d) / high90d
-  const dropFromATH = highATH != null ? (currentPrice - highATH) / highATH : null
 
   // Build 90-day sparkline data
   const priceHistory90d = history52w

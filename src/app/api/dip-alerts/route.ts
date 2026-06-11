@@ -33,6 +33,10 @@ export async function GET(request: NextRequest) {
   const lastRun = await getLatestDipAlertAge(portfolioId)
   const isFresh = lastRun != null && isSameDay(lastRun)
 
+  // Ownership check — applies to both cached and recompute paths
+  const portfolio = await getPortfolioWithStructure(portfolioId, user.id)
+  if (!portfolio) return NextResponse.json({ error: 'Portfolio not found' }, { status: 404 })
+
   if (!force && isFresh) {
     const alerts = await getDipAlertsForPortfolio(portfolioId)
     return NextResponse.json({
@@ -43,10 +47,6 @@ export async function GET(request: NextRequest) {
       cached: true,
     })
   }
-
-  // Recompute
-  const portfolio = await getPortfolioWithStructure(portfolioId, user.id)
-  if (!portfolio) return NextResponse.json({ error: 'Portfolio not found' }, { status: 404 })
 
   const holdings = portfolio.folders.flatMap((f) =>
     f.holdings.map((h) => ({
@@ -106,7 +106,13 @@ export async function GET(request: NextRequest) {
     .map((r) => r.value)
 
   await upsertDipAlerts(newAlerts)
-  await deleteStaleDipAlerts(portfolioId, newAlerts.map((a) => a.holdingId))
+
+  // Only clean up stale alerts when at least one peak was successfully computed —
+  // prevents wiping all alerts when a transient price-data gap causes zero results.
+  const anyPeakComputed = results.some((r) => r.status === 'fulfilled' && r.value !== undefined)
+  if (anyPeakComputed) {
+    await deleteStaleDipAlerts(portfolioId, newAlerts.map((a) => a.holdingId))
+  }
 
   const alerts = await getDipAlertsForPortfolio(portfolioId)
   return NextResponse.json({

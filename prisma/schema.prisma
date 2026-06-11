@@ -1,6 +1,3 @@
-// Prisma Schema - Investment Tracker
-// All monetary values stored as BigInt (agorot/cents × 100)
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,42 +8,37 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ─────────────────────────────────────────────
-// PORTFOLIO STRUCTURE
-// ─────────────────────────────────────────────
-
 model Portfolio {
-  id           String   @id @default(uuid())
-  userId       String   @map("user_id")
-  name         String
-  baseCurrency String   @default("ILS") @map("base_currency")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  folders       Folder[]
-  cashAccounts  CashAccount[]
-  transactions  Transaction[]
+  id            String         @id @default(uuid())
+  userId        String         @map("user_id")
+  name          String
+  baseCurrency  String         @default("ILS") @map("base_currency")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
   agentInsights AgentInsight[]
+  cashAccounts  CashAccount[]
+  folders       Folder[]
+  transactions  Transaction[]
+  dipAlerts     DipAlert[]
 
   @@index([userId])
   @@map("portfolios")
 }
 
 model Folder {
-  id                   String   @id @default(uuid())
-  portfolioId          String   @map("portfolio_id")
-  parentId             String?  @map("parent_id")
-  name                 String
-  color                String?
-  targetAllocationPct  Decimal? @map("target_allocation_pct") @db.Decimal(5, 2)
-  sortOrder            Int      @default(0) @map("sort_order")
-  isHiddenWhenShared   Boolean  @default(false) @map("is_hidden_when_shared")
-  createdAt            DateTime @default(now()) @map("created_at")
-
-  portfolio  Portfolio  @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  parent     Folder?    @relation("FolderTree", fields: [parentId], references: [id])
-  children   Folder[]   @relation("FolderTree")
-  holdings   Holding[]
+  id                  String    @id @default(uuid())
+  portfolioId         String    @map("portfolio_id")
+  parentId            String?   @map("parent_id")
+  name                String
+  color               String?
+  targetAllocationPct Decimal?  @map("target_allocation_pct") @db.Decimal(5, 2)
+  sortOrder           Int       @default(0) @map("sort_order")
+  isHiddenWhenShared  Boolean   @default(false) @map("is_hidden_when_shared")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  parent              Folder?   @relation("FolderTree", fields: [parentId], references: [id])
+  children            Folder[]  @relation("FolderTree")
+  portfolio           Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  holdings            Holding[]
 
   @@index([portfolioId])
   @@index([parentId])
@@ -54,21 +46,21 @@ model Folder {
 }
 
 model Holding {
-  id                  String   @id @default(uuid())
-  folderId            String   @map("folder_id")
-  tickerSymbol        String   @map("ticker_symbol")
-  exchange            String   // 'TASE' | 'NYSE' | 'NASDAQ' | 'OTHER'
+  id                  String         @id @default(uuid())
+  folderId            String         @map("folder_id")
+  tickerSymbol        String         @map("ticker_symbol")
+  exchange            String
   name                String
-  expenseRatio        Decimal? @map("expense_ratio") @db.Decimal(6, 4)
-  targetAllocationPct Decimal? @map("target_allocation_pct") @db.Decimal(5, 2)
-  isActive            Boolean  @default(true) @map("is_active")
-  createdAt           DateTime @default(now()) @map("created_at")
-
-  folder        Folder         @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  lots          Lot[]
-  transactions  Transaction[]
-  thesis        HoldingThesis?
-  agentInsights AgentInsight[]
+  expenseRatio        Decimal?       @map("expense_ratio") @db.Decimal(6, 4)
+  targetAllocationPct Decimal?       @map("target_allocation_pct") @db.Decimal(5, 2)
+  isActive            Boolean        @default(true) @map("is_active")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  agentInsights       AgentInsight[]
+  thesis              HoldingThesis?
+  folder              Folder         @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  lots                Lot[]
+  transactions        Transaction[]
+  dipAlerts           DipAlert[]
 
   @@index([folderId])
   @@index([tickerSymbol])
@@ -76,68 +68,61 @@ model Holding {
 }
 
 model Lot {
-  id                String    @id @default(uuid())
-  holdingId         String    @map("holding_id")
-  purchaseDate      DateTime  @map("purchase_date") @db.Date
-  shares            Decimal   @db.Decimal(18, 6)
-  costPerShare      BigInt    @map("cost_per_share")     // in agorot (ILS×100) or cents (USD×100)
-  costCurrency      String    @default("ILS") @map("cost_currency")
-  accountType       String?   @map("account_type")       // e.g. "השתלמות", "פנסיה"
-  soldShares        Decimal   @default(0) @map("sold_shares") @db.Decimal(18, 6)
-  soldDate          DateTime? @map("sold_date") @db.Date
-  soldPricePerShare BigInt?   @map("sold_price_per_share")
-  proceedsFromSale  BigInt?   @map("proceeds_from_sale")
+  id                String        @id @default(uuid())
+  holdingId         String        @map("holding_id")
+  purchaseDate      DateTime      @map("purchase_date") @db.Date
+  shares            Decimal       @db.Decimal(18, 6)
+  costPerShare      BigInt        @map("cost_per_share")
+  costCurrency      String        @default("ILS") @map("cost_currency")
+  accountType       String?       @map("account_type")
+  soldShares        Decimal       @default(0) @map("sold_shares") @db.Decimal(18, 6)
+  soldDate          DateTime?     @map("sold_date") @db.Date
+  soldPricePerShare BigInt?       @map("sold_price_per_share")
+  proceedsFromSale  BigInt?       @map("proceeds_from_sale")
   notes             String?
-  createdAt         DateTime  @default(now()) @map("created_at")
-
-  holding      Holding       @relation(fields: [holdingId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  createdAt         DateTime      @default(now()) @map("created_at")
+  holding           Holding       @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
 
   @@index([holdingId])
   @@map("lots")
 }
 
 model CashAccount {
-  id                  String   @id @default(uuid())
-  portfolioId         String   @map("portfolio_id")
+  id                  String        @id @default(uuid())
+  portfolioId         String        @map("portfolio_id")
   name                String
-  currency            String   // 'ILS' | 'USD'
-  balance             BigInt   @default(0)  // in agorot or cents
-  targetAllocationPct Decimal? @map("target_allocation_pct") @db.Decimal(5, 2)
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-
-  portfolio    Portfolio     @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  currency            String
+  balance             BigInt        @default(0)
+  targetAllocationPct Decimal?      @map("target_allocation_pct") @db.Decimal(5, 2)
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  portfolio           Portfolio     @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  transactions        Transaction[]
 
   @@index([portfolioId])
   @@map("cash_accounts")
 }
 
-// ─────────────────────────────────────────────
-// ACTIVITY / TRANSACTIONS
-// ─────────────────────────────────────────────
-
 model Transaction {
-  id            String    @id @default(uuid())
-  portfolioId   String    @map("portfolio_id")
-  type          String    // 'SECURITY_BUY' | 'SECURITY_SELL' | 'DIVIDEND' | 'CASH_DEPOSIT' | 'CASH_WITHDRAWAL'
-  date          DateTime  @db.Date
-  holdingId     String?   @map("holding_id")
-  lotId         String?   @map("lot_id")
-  cashAccountId String?   @map("cash_account_id")
-  shares        Decimal?  @db.Decimal(18, 6)
-  pricePerShare BigInt?   @map("price_per_share")
-  amount        BigInt    // total amount in agorot/cents
+  id            String       @id @default(uuid())
+  portfolioId   String       @map("portfolio_id")
+  type          String
+  date          DateTime     @db.Date
+  holdingId     String?      @map("holding_id")
+  lotId         String?      @map("lot_id")
+  cashAccountId String?      @map("cash_account_id")
+  shares        Decimal?     @db.Decimal(18, 6)
+  pricePerShare BigInt?      @map("price_per_share")
+  amount        BigInt
   currency      String
-  realizedGain  BigInt?   @map("realized_gain")
+  realizedGain  BigInt?      @map("realized_gain")
   notes         String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-
-  portfolio   Portfolio    @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  holding     Holding?     @relation(fields: [holdingId], references: [id])
-  lot         Lot?         @relation(fields: [lotId], references: [id])
-  cashAccount CashAccount? @relation(fields: [cashAccountId], references: [id])
+  createdAt     DateTime     @default(now()) @map("created_at")
+  cashAccount   CashAccount? @relation(fields: [cashAccountId], references: [id])
+  holding       Holding?     @relation(fields: [holdingId], references: [id])
+  lot           Lot?         @relation(fields: [lotId], references: [id])
+  portfolio     Portfolio    @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
 
   @@index([portfolioId])
   @@index([date(sort: Desc)])
@@ -145,15 +130,11 @@ model Transaction {
   @@map("transactions")
 }
 
-// ─────────────────────────────────────────────
-// PRICE & MARKET DATA CACHE (shared, no user_id)
-// ─────────────────────────────────────────────
-
 model PriceCache {
   id           String   @id @default(uuid())
   tickerSymbol String   @map("ticker_symbol")
-  exchange     String   // 'TASE' | 'US'
-  price        BigInt   // in agorot (TASE) or cents (US)
+  exchange     String
+  price        BigInt
   currency     String
   priceDate    DateTime @map("price_date") @db.Date
   fetchedAt    DateTime @default(now()) @map("fetched_at")
@@ -164,16 +145,16 @@ model PriceCache {
 }
 
 model DividendCache {
-  id            String    @id @default(uuid())
-  tickerSymbol  String    @map("ticker_symbol")
-  exchange      String
-  declareDate   DateTime? @map("declare_date") @db.Date
-  exDate        DateTime  @map("ex_date") @db.Date
-  payDate       DateTime? @map("pay_date") @db.Date
-  amountPerShare BigInt   @map("amount_per_share") // in cents
-  currency      String
-  frequency     String?   // 'monthly' | 'quarterly' | 'annual' | 'irregular'
-  fetchedAt     DateTime  @default(now()) @map("fetched_at")
+  id             String    @id @default(uuid())
+  tickerSymbol   String    @map("ticker_symbol")
+  exchange       String
+  declareDate    DateTime? @map("declare_date") @db.Date
+  exDate         DateTime  @map("ex_date") @db.Date
+  payDate        DateTime? @map("pay_date") @db.Date
+  amountPerShare BigInt    @map("amount_per_share")
+  currency       String
+  frequency      String?
+  fetchedAt      DateTime  @default(now()) @map("fetched_at")
 
   @@unique([tickerSymbol, exDate])
   @@index([tickerSymbol])
@@ -192,59 +173,75 @@ model FxRate {
   @@map("fx_rates")
 }
 
-// ─────────────────────────────────────────────
-// EXPLORE PROFILES
-// ─────────────────────────────────────────────
-
 model ExploreProfile {
   id          String   @id @default(uuid())
   name        String
   description String
-  allocations Json     // [{name, pct, color}]
+  allocations Json
   isFeatured  Boolean  @default(false) @map("is_featured")
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("explore_profiles")
 }
 
-// ─────────────────────────────────────────────
-// AI AGENTS
-// ─────────────────────────────────────────────
-
 model HoldingThesis {
   id          String   @id @default(uuid())
   holdingId   String   @unique @map("holding_id")
   userId      String   @map("user_id")
-  rawText     String   @map("raw_text")         // original user explanation
-  thesis      String                             // structured 1-2 sentence thesis
-  horizon     String?                            // "short" | "medium" | "long"
-  catalysts   Json     @default("[]")            // string[]
-  riskFactors Json     @default("[]") @map("risk_factors")  // string[]
+  rawText     String   @map("raw_text")
+  thesis      String
+  horizon     String?
+  catalysts   Json     @default("[]")
+  riskFactors Json     @default("[]") @map("risk_factors")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-
-  holding Holding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  holding     Holding  @relation(fields: [holdingId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("holding_theses")
 }
 
 model AgentInsight {
-  id          String   @id @default(uuid())
-  portfolioId String   @map("portfolio_id")
-  userId      String   @map("user_id")
-  type        String   // "THESIS_BROKEN" | "ALLOCATION_DRIFT" | "MARKET_UPDATE" | "OPPORTUNITY"
-  severity    String   // "info" | "warning" | "alert"
-  holdingId   String?  @map("holding_id")
+  id          String    @id @default(uuid())
+  portfolioId String    @map("portfolio_id")
+  userId      String    @map("user_id")
+  type        String
+  severity    String
+  holdingId   String?   @map("holding_id")
   title       String
   body        String
-  dismissed   Boolean  @default(false)
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  portfolio Portfolio  @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  holding   Holding?   @relation(fields: [holdingId],   references: [id], onDelete: SetNull)
+  dismissed   Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  holding     Holding?  @relation(fields: [holdingId], references: [id], onUpdate: NoAction)
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([portfolioId, dismissed])
   @@index([createdAt(sort: Desc)])
   @@map("agent_insights")
+}
+
+model DipAlert {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  portfolioId  String   @map("portfolio_id")
+  holdingId    String   @map("holding_id")
+  ticker       String
+  name         String
+  currentPrice Float    @map("current_price")
+  high52w      Float    @map("high_52w")
+  highATH      Float?   @map("high_ath")
+  high90d      Float    @map("high_90d")
+  dropFrom52w  Float    @map("drop_from_52w")
+  dropFromATH  Float?   @map("drop_from_ath")
+  dropFrom90d  Float    @map("drop_from_90d")
+  priceHistory Json     @map("price_history")
+  aiSuggestion String?  @map("ai_suggestion")
+  computedAt   DateTime @map("computed_at")
+
+  holding   Holding   @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([holdingId, portfolioId])
+  @@index([portfolioId, computedAt(sort: Desc)])
+  @@map("dip_alerts")
 }

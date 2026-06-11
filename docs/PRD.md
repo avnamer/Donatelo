@@ -72,11 +72,16 @@ Israeli individual investor who:
 - [ ] Toggle: ignore purchase dates (treat all shares as eligible)
 
 #### Activity Log
-- [ ] Summary panel: buys, sells, dividends, cash flows
-- [ ] Year filter + action type filter
-- [ ] Three donut charts: net inflows by folder, net outflows by folder, dividends by folder
-- [ ] Full activity log table: date, type emoji, holding, amount
-- [ ] Transaction types: Security Bought 💸, Security Sold 🛒, Asset Deposit 🏦, Asset Withdrawal 🏧, Dividend 💵
+- [x] Summary cards: trades donut, dividends donut, cash-flows donut, total invested, total deposited, total dividends, total commissions
+- [x] Filter tabs by transaction type (All / Buys / Sells / Dividends / Deposits / Withdrawals / Commissions / FX)
+- [x] Server-side pagination (50 rows/page, numbered page buttons, "51–100 of 234" counter)
+- [x] Transaction table: date, type badge, security/account, shares + price-per-share, amount + realized-gain, notes
+- [x] Transaction types implemented: `SECURITY_BUY`, `SECURITY_SELL`, `DIVIDEND`, `CASH_DEPOSIT`, `CASH_WITHDRAWAL`, `COMMISSION`, `FX_CONVERSION`
+- [x] Auto-backfill from lots on page load (idempotent, deduplicates existing rows)
+- [ ] Date range filter (this year / last 12 months / custom range)
+- [ ] Manual transaction entry UI (for dividends, commissions, deposits, FX)
+- [ ] `FX_CONVERSION` full support: schema fields `from_amount` + `from_currency`
+- [ ] CSV export of filtered activity
 
 #### Explore / Templates
 - [ ] Public portfolio profiles with descriptions

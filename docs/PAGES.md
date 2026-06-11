@@ -62,6 +62,7 @@
 - Each card: ticker, drop % badge, current price, period high, 90-day sparkline, AI one-liner
 - Clicking a card opens a modal with a larger chart and the same toggle
 - Refresh button (↻) forces recomputation — backfills 52w price history from Polygon/Yahoo if cache is sparse
+- **Backfill is sequential** with 13s delay between US stocks to respect Polygon.io free-tier rate limit (5 req/min). First-time refresh takes ~5 min; subsequent days are instant (data already cached)
 - Same-day cache: computed once per day, instant on return visits
 - Cards sorted by drop % descending (biggest dip first)
 - Deduplication: if same ticker appears in multiple folders, shown once

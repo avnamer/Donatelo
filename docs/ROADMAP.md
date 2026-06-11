@@ -191,9 +191,9 @@ then layer on features. Each phase ships something usable.
 - [x] **Buy the Dip alerts** — holdings down ≥ 10% from peak
   - `dip_alerts` table, `/api/dip-alerts` with same-day cache
   - Global toggle: 52w / Historical / 90d (updates all cards at once)
-  - Backfills 52w price history from Polygon/Yahoo on first compute
+  - Backfills 52w price history from Polygon/Yahoo on first compute (sequential, rate-limited)
   - Cards: drop %, sparkline, AI suggestion (Claude Haiku)
-  - Modal: full-size chart filtered by selected time window
+  - Modal: full-size chart filtered by selected time window, dates in DD/MM/YY
   - Sorted by biggest drop first, deduped by ticker
 
 ### 5.2 Visualize Page (`/visualize`)

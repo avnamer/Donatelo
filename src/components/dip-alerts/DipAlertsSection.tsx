@@ -7,6 +7,14 @@ import { DipAlertCard } from './DipAlertCard'
 import { DipAlertModal } from './DipAlertModal'
 import type { DipAlertRow } from '@/lib/db/queries/dip-alerts'
 
+export type PeakView = '52w' | 'ath' | '90d'
+
+const VIEW_LABELS: Record<PeakView, string> = {
+  '52w': '52w',
+  ath: 'Historical',
+  '90d': '90d',
+}
+
 interface DipAlertsSectionProps {
   portfolioId: string
 }
@@ -25,6 +33,7 @@ async function fetchDipAlerts(portfolioId: string, force = false): Promise<{
 export function DipAlertsSection({ portfolioId }: DipAlertsSectionProps) {
   const [selectedAlert, setSelectedAlert] = useState<DipAlertRow | null>(null)
   const [forceKey, setForceKey] = useState(0)
+  const [view, setView] = useState<PeakView>('52w')
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['dip-alerts', portfolioId, forceKey],
@@ -38,6 +47,9 @@ export function DipAlertsSection({ portfolioId }: DipAlertsSectionProps) {
 
   const alerts = data?.alerts ?? []
 
+  // Check if any alert has a non-null ATH (to decide whether to show Hist. toggle)
+  const hasATH = alerts.some((a) => a.highATH != null && a.highATH !== a.high52w)
+
   return (
     <section className="mt-8">
       {/* Header */}
@@ -50,14 +62,45 @@ export function DipAlertsSection({ portfolioId }: DipAlertsSectionProps) {
             </span>
           )}
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={isFetching}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+
+        <div className="flex items-center gap-3">
+          {/* Global time-period toggle */}
+          {alerts.length > 0 && (
+            <div className="flex gap-1 rounded-lg bg-muted p-1">
+              {(['52w', 'ath', '90d'] as PeakView[]).map((v) => {
+                const disabled = v === 'ath' && !hasATH
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => { if (!disabled) setView(v) }}
+                    disabled={disabled}
+                    title={disabled ? 'No historical data beyond 52w' : undefined}
+                    className={[
+                      'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                      view === v
+                        ? 'bg-background shadow text-foreground'
+                        : disabled
+                          ? 'text-muted-foreground/40 cursor-not-allowed'
+                          : 'text-muted-foreground hover:text-foreground cursor-pointer',
+                    ].join(' ')}
+                  >
+                    {VIEW_LABELS[v]}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          <button
+            onClick={handleRefresh}
+            disabled={isFetching}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Loading */}
@@ -87,6 +130,7 @@ export function DipAlertsSection({ portfolioId }: DipAlertsSectionProps) {
             <DipAlertCard
               key={alert.id}
               alert={alert}
+              view={view}
               onClick={() => setSelectedAlert(alert)}
             />
           ))}

@@ -13,8 +13,14 @@ interface DipAlertCardProps {
 
 const VIEW_LABELS: Record<PeakView, string> = {
   '52w': '52w',
-  ath: 'Historical',
+  ath: 'Hist.',
   '90d': '90d',
+}
+
+const VIEW_HIGH_LABEL: Record<PeakView, string> = {
+  '52w': '52w high',
+  ath: 'Hist. high',
+  '90d': '90d high',
 }
 
 export function DipAlertCard({ alert, onClick }: DipAlertCardProps) {
@@ -29,6 +35,13 @@ export function DipAlertCard({ alert, onClick }: DipAlertCardProps) {
     '52w': alert.dropFrom52w,
     ath: alert.dropFromATH,
     '90d': alert.dropFrom90d,
+  }
+
+  // Disable a view if null or identical to 52w (would show no difference)
+  const isDisabled = (v: PeakView) => {
+    if (v === '52w') return false
+    if (peakMap[v] == null) return true
+    return peakMap[v] === alert.high52w
   }
 
   const selectedPeak = peakMap[view] ?? alert.high52w
@@ -48,28 +61,40 @@ export function DipAlertCard({ alert, onClick }: DipAlertCardProps) {
         </span>
       </div>
 
-      {/* Toggle */}
-      <div className="flex gap-0.5 rounded-md bg-muted p-0.5">
-        {(['52w', 'ath', '90d'] as PeakView[]).map((v) => (
-          <button
-            key={v}
-            onClick={(e) => { e.stopPropagation(); if (peakMap[v] != null) setView(v) }}
-            disabled={peakMap[v] == null}
-            className={[
-              'flex-1 rounded px-1 py-0.5 text-[10px] font-medium transition-colors',
-              view === v ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground',
-              peakMap[v] == null ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
-            ].join(' ')}
-          >
-            {VIEW_LABELS[v]}
-          </button>
-        ))}
+      {/* Toggle — bigger tap targets, clearly disabled when identical */}
+      <div className="flex gap-1 rounded-lg bg-muted p-1">
+        {(['52w', 'ath', '90d'] as PeakView[]).map((v) => {
+          const disabled = isDisabled(v)
+          const active = view === v
+          return (
+            <button
+              key={v}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!disabled) setView(v)
+              }}
+              disabled={disabled}
+              title={disabled && v !== '52w' ? (peakMap[v] == null ? 'No data' : 'Same as 52w') : undefined}
+              className={[
+                'flex-1 rounded-md py-1 px-2 text-xs font-medium transition-all select-none',
+                active
+                  ? 'bg-background shadow text-foreground'
+                  : disabled
+                    ? 'text-muted-foreground/40 cursor-not-allowed'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-background/50 cursor-pointer',
+              ].join(' ')}
+            >
+              {VIEW_LABELS[v]}
+            </button>
+          )
+        })}
       </div>
 
-      {/* Prices */}
+      {/* Prices — label changes with view so user sees the switch happened */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>Current <span className="text-foreground font-medium">{alert.currentPrice.toFixed(2)}</span></span>
-        <span>High <span className="text-foreground font-medium">{selectedPeak.toFixed(2)}</span></span>
+        <span>{VIEW_HIGH_LABEL[view]} <span className="text-foreground font-medium">{selectedPeak.toFixed(2)}</span></span>
       </div>
 
       {/* Sparkline */}

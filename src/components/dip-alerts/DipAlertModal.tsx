@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Modal } from '@/components/ui/modal'
 import type { DipAlertRow } from '@/lib/db/queries/dip-alerts'
@@ -15,6 +15,19 @@ interface DipAlertModalProps {
 
 export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
   const [view, setView] = useState<PeakView>('52w')
+
+  // Filter chart data based on selected view.
+  // priceHistory stores 52w data; 90d is a subset; ath uses the same 52w data.
+  const chartData = useMemo(() => {
+    if (!alert) return []
+    if (view === '90d') {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - 90)
+      const cutoffStr = cutoff.toISOString().split('T')[0]
+      return alert.priceHistory.filter((p) => p.date >= cutoffStr)
+    }
+    return alert.priceHistory // 52w or Historical — full stored history
+  }, [alert, view])
 
   if (!alert) return null
 
@@ -33,6 +46,11 @@ export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
   const selectedDrop = dropMap[view]
   const dropPct = selectedDrop != null ? (Math.abs(selectedDrop) * 100).toFixed(1) : '—'
 
+  const isDisabled = (v: PeakView) => {
+    if (v === '52w') return false
+    return peakMap[v] == null
+  }
+
   const viewLabels: Record<PeakView, string> = {
     '52w': '52-week high',
     ath: 'Historical high',
@@ -46,14 +64,16 @@ export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
         {(['52w', 'ath', '90d'] as PeakView[]).map((v) => (
           <button
             key={v}
-            onClick={() => { if (peakMap[v] != null) setView(v) }}
-            disabled={peakMap[v] == null}
+            type="button"
+            onClick={() => { if (!isDisabled(v)) setView(v) }}
+            disabled={isDisabled(v)}
             className={[
-              'flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+              'flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
               view === v
                 ? 'bg-background shadow text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-              peakMap[v] == null ? 'opacity-40 cursor-not-allowed' : '',
+                : isDisabled(v)
+                  ? 'text-muted-foreground/40 cursor-not-allowed'
+                  : 'text-muted-foreground hover:text-foreground cursor-pointer',
             ].join(' ')}
           >
             {viewLabels[v]}
@@ -77,11 +97,11 @@ export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
         </div>
       </div>
 
-      {/* Sparkline */}
-      {alert.priceHistory.length > 1 && (
+      {/* Chart — data window changes with view */}
+      {chartData.length > 1 && (
         <div className="h-36 mb-4">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={alert.priceHistory}>
+            <LineChart data={chartData}>
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 10 }}

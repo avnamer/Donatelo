@@ -50,9 +50,8 @@ export async function computePeaks(
   const dropFrom90d = (currentPrice - high90d) / high90d
   const dropFromATH = highATH != null ? (currentPrice - highATH) / highATH : null
 
-  // Build 90-day sparkline data
+  // Store full 52w price history — modal filters to 90d subset client-side
   const priceHistory90d = history52w
-    .filter((r) => r.priceDate >= cutoff90d)
     .map((r) => ({
       date: r.priceDate.toISOString().split('T')[0],
       price: toFloat(r.price),

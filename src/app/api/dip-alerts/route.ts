@@ -8,7 +8,7 @@ import {
   upsertDipAlerts,
   deleteStaleDipAlerts,
 } from '@/lib/db/queries'
-import { computePeaks } from '@/lib/dip-alerts/compute'
+import { computePeaks, backfillPriceHistories } from '@/lib/dip-alerts/compute'
 import { generateDipSuggestion } from '@/lib/dip-alerts/ai-suggestion'
 
 const DIP_THRESHOLD = -0.10
@@ -68,6 +68,15 @@ export async function GET(request: NextRequest) {
     })
 
   const now = new Date()
+
+  // Backfill 52w price history sequentially (respects Polygon rate limit)
+  const from52w = new Date(now)
+  from52w.setFullYear(from52w.getFullYear() - 1)
+  await backfillPriceHistories(
+    holdings.map((h) => ({ ticker: h.ticker, exchange: h.exchange })),
+    from52w,
+    now
+  )
 
   const results = await Promise.allSettled(
     holdings.map(async (holding) => {

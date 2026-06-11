@@ -16,25 +16,31 @@ export interface PeakData {
 // Minimum trading days expected in 52 weeks (accounting for weekends/holidays)
 const MIN_52W_ENTRIES = 180
 
+// Polygon.io free tier: 5 req/min → 1 request per 13s to be safe
+const POLYGON_RATE_DELAY_MS = 13_000
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 /**
  * Ensure 52w price history is populated in the cache.
  * If we have fewer than MIN_52W_ENTRIES, fetch from external API and backfill.
+ * Returns true if a fetch was performed (caller should delay before next US stock).
  */
-async function ensurePriceHistory(
+export async function ensurePriceHistory(
   tickerSymbol: string,
   exchange: string,
   from: Date,
   to: Date
-): Promise<void> {
+): Promise<boolean> {
   const existing = await getHistoricalPrices(tickerSymbol, from, to)
-  if (existing.length >= MIN_52W_ENTRIES) return // cache is sufficient
+  if (existing.length >= MIN_52W_ENTRIES) return false // cache is sufficient
 
   const history =
     exchange === 'TASE'
       ? await fetchTasePriceHistory(tickerSymbol, from, to)
       : await fetchUSPriceHistory(tickerSymbol, from, to)
 
-  if (history.length === 0) return
+  if (history.length === 0) return true // fetch attempted but empty
 
   // Store all fetched entries in PriceCache (upsert = no duplicates)
   await Promise.allSettled(
@@ -48,6 +54,25 @@ async function ensurePriceHistory(
       })
     )
   )
+  return true
+}
+
+/**
+ * Backfill 52w price history for all holdings that need it, sequentially
+ * with rate-limit delay between US stocks to respect Polygon.io free tier.
+ */
+export async function backfillPriceHistories(
+  holdings: Array<{ ticker: string; exchange: string }>,
+  from: Date,
+  to: Date
+): Promise<void> {
+  for (const holding of holdings) {
+    const fetched = await ensurePriceHistory(holding.ticker, holding.exchange, from, to)
+    // Only delay after US stocks (Polygon) — TASE uses Yahoo (no strict rate limit)
+    if (fetched && holding.exchange !== 'TASE') {
+      await sleep(POLYGON_RATE_DELAY_MS)
+    }
+  }
 }
 
 export async function computePeaks(
@@ -58,9 +83,6 @@ export async function computePeaks(
 
   const from52w = new Date(today)
   from52w.setFullYear(from52w.getFullYear() - 1)
-
-  // Backfill cache with 52w of data if needed
-  await ensurePriceHistory(tickerSymbol, exchange, from52w, today)
 
   const history52w = await getHistoricalPrices(tickerSymbol, from52w, today)
   if (history52w.length === 0) return null

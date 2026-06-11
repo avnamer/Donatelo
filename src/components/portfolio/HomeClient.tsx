@@ -15,6 +15,7 @@ import { useUIStore, type TimeRange } from '@/store/ui'
 import type { ServerHolding, HoldingMetrics } from '@/hooks/usePortfolio'
 import type { FolderRow } from '@/lib/db/queries'
 import { useBenchmark } from '@/hooks/useBenchmark'
+import { DipAlertsSection } from '@/components/dip-alerts/DipAlertsSection'
 
 interface HomeClientProps {
   holdings: ServerHolding[]
@@ -189,6 +190,7 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
             benchmarkData={benchmarkData}
             loading={metrics.pricesLoading}
           />
+          <DipAlertsSection portfolioId={portfolioId} />
         </div>
 
         {/* KPI list — horizontal row on mobile, vertical on desktop */}

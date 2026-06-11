@@ -39,6 +39,9 @@ export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
     '90d': '90-day high',
   }
 
+  // 90d same as 52w when peak didn't occur in last 90 days
+  const same90dAs52w = alert.high90d != null && alert.high90d === alert.high52w
+
   return (
     <Modal open={open} onClose={onClose} title={`${alert.ticker} — ${alert.name}`}>
       {/* Toggle */}
@@ -49,7 +52,7 @@ export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
             onClick={() => { if (peakMap[v] != null) setView(v) }}
             disabled={peakMap[v] == null}
             className={[
-              'flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+              'flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors flex flex-col items-center gap-0',
               view === v
                 ? 'bg-background shadow text-foreground'
                 : 'text-muted-foreground hover:text-foreground',
@@ -57,6 +60,12 @@ export function DipAlertModal({ alert, open, onClose }: DipAlertModalProps) {
             ].join(' ')}
           >
             {viewLabels[v]}
+            {v === '90d' && same90dAs52w && (
+              <span className="text-[10px] opacity-60">= 52w</span>
+            )}
+            {v === 'ath' && peakMap[v] == null && (
+              <span className="text-[10px] opacity-60">N/A</span>
+            )}
           </button>
         ))}
       </div>

@@ -81,49 +81,63 @@
 
 ---
 
-### `/folders/[...path]` — Folder View
+### `/folders/[id]` — Folder View
 
-Same layout as Home, but scoped to a specific folder.
-URL examples:
-- `/folders/ישראל`
-- `/folders/ישראל/מדדים`
+Drill-down into a specific folder (region, sector, etc.).
+
+**Layout:**
+```
+Breadcrumb: Portfolio › [Parent] › [Current Folder]
+[Folder name + color] [Add Holding] [Rename] [Delete]
+
+KPIs: VALUE | UNREALIZED GAIN | RETURN
+
+┌─ DrilldownChart (weighted performance of all holdings) ─────────┐
+│ [Folder] — Performance          30D 90D 6M YTD 1Y 3Y            │
+│  +X.XX%                                                          │
+│  [area chart indexed to 100 at start of period]                  │
+└──────────────────────────────────────────────────────────────────┘
+
+Sub-folders table (if any): Name | Value | Gain/Return | Alloc
+Holdings table: Name | Value | Gain/Return | Alloc
+```
+
+**DrilldownChart:** value-weighted portfolio return across all holdings in the folder
+(direct + sub-folder holdings). Fetches price series from `/api/prices/series`.
+Period selector: 30D · 90D · 6M · YTD · 1Y · 3Y.
+Shows "No price history for this period" if price_cache lacks data for the range.
 
 ---
 
-### `/tickers/[symbol]` — Holding Detail
+### `/holdings/[id]` — Holding Detail
 
 **Purpose:** Deep dive into a single security.
 
 **Layout:**
 ```
-┌──────────────────┬──────────────────────────────────┐
-│ [Ticker Name]    │                                  │
-│ Back             │  Price Chart (1Y, full width)    │
-│                  │                                  │
-│ Last Closing: X  │                                  │
-│ Return (Unreal): │                                  │
-│ Total Return:    ├──────────────────────────────────┤
-│ Value: ₪X        │ Lots                             │
-│                  │ Date  Shares  Cost  Portfolio  Folder│
-│ Unrealized:      │ ...                              │
-│ Realized:        │ [+ Add new lot]    [Delete All]  │
-│ Cost Basis:      │                                  │
-│ Shares:          │                                  │
-│ Avg Cost/share:  │                                  │
-│ Total Proceeds:  │                                  │
-│ Expense Ratio:   │                                  │
-│                  │                                  │
-│ [Link: Bizportal]│                                  │
-│ X.XX% of portf.  │                                  │
-└──────────────────┴──────────────────────────────────┘
+Back to Portfolio / [Folder Name]
+[TICKER]  [EXCHANGE]   [Record Dividend]  [Add Lot]
+[Full name]
+
+KPIs: CURRENT VALUE | COST BASIS | UNREALIZED P&L | SHARES
+
+┌─ DrilldownChart (price history for this security) ──────────────┐
+│ [TICKER] — Performance          30D 90D 6M YTD 1Y 3Y            │
+│  +X.XX%                                                          │
+│  [area chart indexed to 100 at start of period]                  │
+└──────────────────────────────────────────────────────────────────┘
+
+ACTIVE LOTS table: Date | Shares | Cost/Share | Account | Notes
+SOLD LOTS table:   Bought | Sold | Shares Sold | Sell Price | Proceeds
 ```
 
+**DrilldownChart:** single-security price history from `price_cache`, indexed to 100
+at start of period. Period selector: 30D · 90D · 6M · YTD · 1Y · 3Y.
+
 **Interactions:**
-- Click on a lot date → open edit lot modal
-- [+ Add new lot] → inline form: date, shares, cost, portfolio, folder
-- [$ icon] → record a sell on this lot
+- [Sell] on a lot → SellLotDialog
+- [Edit] on a lot → EditLotDialog
 - [🗑 icon] → delete lot (with confirmation)
-- [Delete All] → delete all lots
 
 ---
 
@@ -385,16 +399,38 @@ interface KPIPanelProps {
 }
 ```
 
-### Performance Chart
+### Performance Chart (`src/components/charts/PerformanceChart.tsx`)
+Full portfolio performance — area chart indexed to 100, with benchmark overlay.
+Time ranges: 1W · 1M · 3M · 6M · YTD · 1Y · 2Y · 3Y · ALL.
+Used on the Home dashboard.
+
 ```typescript
 interface PerformanceChartProps {
-  data: Array<{ date: Date; index: number }>
-  benchmarks?: {
-    sp500?: Array<{ date: Date; index: number }>
-    msciAcwi?: Array<{ date: Date; index: number }>
-  }
-  timeRange: '3M' | '6M' | '9M' | '1Y' | 'ALL'
-  isSimulated: boolean
+  data: PerformancePoint[]       // { date: Date; index: number }[]
+  benchmarkData?: PerformancePoint[]
+  loading?: boolean
+}
+```
+
+### Drilldown Chart (`src/components/charts/DrilldownChart.tsx`)
+Folder / holding-level performance — value-weighted area chart indexed to 100.
+Fetches price time series from `/api/prices/series` via `usePriceSeries` hook.
+Period selector: 30D · 90D · 6M · YTD · 1Y · 3Y.
+Used on `/folders/[id]` and `/holdings/[id]`.
+
+```typescript
+interface DrilldownHolding {
+  tickerSymbol: string
+  exchange: string       // 'TASE' | 'US' | ...
+  activeShares: number
+  currentValue: number   // cents, used for weighting fallback
+}
+
+interface DrilldownChartProps {
+  holdings: DrilldownHolding[]
+  fxRate?: number            // ILS per USD (default 3.72)
+  portfolioCurrency?: string // 'ILS' | 'USD'
+  label?: string             // chart title
 }
 ```
 

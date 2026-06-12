@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: 2026-06-11
+> Last updated: 2026-06-12
 
 ---
 
@@ -15,7 +15,8 @@
                    │  HTTP / Server Components / Server Actions
 ┌──────────────────▼──────────────────────────────────────────────┐
 │                  Next.js API Routes (Server)                    │
-│  /api/prices          /api/prices/history   /api/fx             │
+│  /api/prices          /api/prices/history   /api/prices/series  │
+│  /api/fx                                                        │
 │  /api/dividends       /api/benchmark        /api/market-movers  │
 │  /api/portfolios      /api/folders          /api/holdings       │
 │  /api/lots            /api/lots/backfill    /api/cash-accounts  │
@@ -123,6 +124,19 @@ For each ticker + period:
      US:   {ticker} as-is
      TASE: {ticker}.TA suffix appended
      TASE numeric IDs: skip Yahoo (not supported) → use DB only
+```
+
+### Price Time Series (`/api/prices/series`)
+```
+GET /api/prices/series?tickers=AAPL:US,LUMI.TA:TASE&period=30d|90d|6m|ytd|1y|3y
+
+Returns: { [symbol]: { currency: string; points: { date: string; price: number }[] } }
+  price is in cents (same scale as price_cache.price)
+
+Strategy:
+  - Single DB query: price_cache WHERE tickerSymbol IN (...) AND priceDate >= startDate
+  - No Yahoo fallback (returns whatever is in cache)
+  - Used by DrilldownChart on folder and holding-detail pages
 ```
 
 ### Currency Rates

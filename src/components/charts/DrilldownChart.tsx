@@ -53,83 +53,87 @@ const PERIODS: { id: SeriesPeriod; label: string }[] = [
 // ─── Helpers ──────────────────────────────────
 
 /**
- * Given series data for multiple holdings, compute a value-weighted portfolio
- * index (indexed to 100 at the first available date).
+ * Compute a value-weighted portfolio return index (indexed to 100 at start).
  *
- * Algorithm:
- *  1. Collect all unique dates across all holdings that have price data.
- *  2. For each date, compute portfolio value = Σ(shares_i × price_i(date))
- *     using the last-known price for tickers missing that date.
- *  3. Index the value series so the first point = 100.
+ * Algorithm — avoids FX distortion by working in each security's own currency:
+ *  1. For each holding compute its per-date price return relative to its
+ *     anchor price (first point in its series, which the API sets to startDate).
+ *  2. Weight each holding's return by its current value (proportional weight).
+ *  3. Combined index(date) = 100 × Σ(weight_i × price_i(date) / anchorPrice_i)
+ *
+ * This way USD holdings contribute their USD return and ILS holdings their ILS
+ * return, all blended by current portfolio weight — FX movements don't distort
+ * the chart.
  */
 function buildIndexedSeries(
   holdings: DrilldownHolding[],
   seriesData: Record<string, { currency: string; points: { date: string; price: number }[] }>,
-  fxRate: number,
-  portfolioCurrency: string,
+  _fxRate: number,
+  _portfolioCurrency: string,
 ): { date: string; index: number }[] {
   if (holdings.length === 0) return []
 
-  // Collect all dates (sorted)
-  const dateSet = new Set<string>()
-  for (const h of holdings) {
-    const s = seriesData[h.tickerSymbol]
-    if (s) s.points.forEach((p) => dateSet.add(p.date))
-  }
-  const dates = Array.from(dateSet).sort()
-  if (dates.length === 0) return []
+  // Filter to holdings that have at least 2 price points
+  const activeHoldings = holdings.filter((h) => (seriesData[h.tickerSymbol]?.points.length ?? 0) >= 2)
+  if (activeHoldings.length === 0) return []
 
-  // Build last-known-price map per ticker per date
-  // lastPrice[ticker] is updated as we walk through dates
-  const lastPrice: Record<string, number> = {}
-  // Pre-build a map: ticker → { date → price }
+  // Compute weights based on currentValue (fall back to equal weight if all zero)
+  const totalValue = activeHoldings.reduce((s, h) => s + h.currentValue, 0)
+  const weights: Record<string, number> = {}
+  if (totalValue > 0) {
+    for (const h of activeHoldings) weights[h.tickerSymbol] = h.currentValue / totalValue
+  } else {
+    const eq = 1 / activeHoldings.length
+    for (const h of activeHoldings) weights[h.tickerSymbol] = eq
+  }
+
+  // Pre-build date→price maps and anchor prices per holding
   const priceMap: Record<string, Record<string, number>> = {}
-  for (const h of holdings) {
+  const anchorPrice: Record<string, number> = {}
+  const dateSet = new Set<string>()
+
+  for (const h of activeHoldings) {
     const s = seriesData[h.tickerSymbol]
     if (!s) continue
     priceMap[h.tickerSymbol] = {}
     for (const p of s.points) {
       priceMap[h.tickerSymbol][p.date] = p.price
+      dateSet.add(p.date)
     }
+    anchorPrice[h.tickerSymbol] = s.points[0].price
   }
 
-  // Walk dates and compute portfolio value at each date
-  const values: number[] = []
+  const dates = Array.from(dateSet).sort()
+
+  // Walk dates, carry forward last known price per holding
+  const lastPrice: Record<string, number> = {}
+  const result: { date: string; index: number }[] = []
+
   for (const date of dates) {
-    let portValue = 0
-    for (const h of holdings) {
+    // Update last-known prices
+    for (const h of activeHoldings) {
       const pm = priceMap[h.tickerSymbol]
-      if (!pm) continue
-      if (pm[date] !== undefined) {
-        lastPrice[h.tickerSymbol] = pm[date]
-      }
-      const price = lastPrice[h.tickerSymbol]
-      if (price === undefined) continue
-
-      const series = seriesData[h.tickerSymbol]
-      const priceCurrency = series?.currency ?? (h.exchange === 'TASE' ? 'ILS' : 'USD')
-      // Convert price (cents) to portfolio currency
-      let priceInPortfolio = price
-      if (priceCurrency !== portfolioCurrency) {
-        priceInPortfolio = portfolioCurrency === 'ILS'
-          ? price * fxRate
-          : price / fxRate
-      }
-      portValue += h.activeShares * priceInPortfolio
+      if (pm?.[date] !== undefined) lastPrice[h.tickerSymbol] = pm[date]
     }
-    values.push(portValue)
+
+    // Compute weighted index: Σ weight_i × (price_i / anchor_i)
+    let idx = 0
+    let weightSum = 0
+    for (const h of activeHoldings) {
+      const price = lastPrice[h.tickerSymbol]
+      const anchor = anchorPrice[h.tickerSymbol]
+      if (price === undefined || !anchor) continue
+      idx += weights[h.tickerSymbol] * (price / anchor)
+      weightSum += weights[h.tickerSymbol]
+    }
+
+    if (weightSum > 0) {
+      result.push({ date, index: (idx / weightSum) * 100 })
+    }
   }
 
-  // Filter to dates where we have a non-zero portfolio value
-  const validPairs = dates.map((d, i) => ({ date: d, value: values[i] }))
-    .filter((p) => p.value > 0)
-  if (validPairs.length < 2) return []
-
-  const baseValue = validPairs[0].value
-  return validPairs.map((p) => ({
-    date: p.date,
-    index: (p.value / baseValue) * 100,
-  }))
+  if (result.length < 2) return []
+  return result
 }
 
 // ─── Tooltip ──────────────────────────────────

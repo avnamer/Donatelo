@@ -69,6 +69,13 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
   const unrealizedReturnPct = calcUnrealizedReturnPct(unrealizedGains, costBasis)
   const isPositive = unrealizedGains >= 0n
 
+  const isForeign = priceCurrency === 'USD' && currency === 'ILS'
+  const currentValueUSD = isForeign ? BigInt(Math.round(valueInPriceCurrency)) : null
+  const costBasisUSD    = isForeign ? calcCostBasis(lots, 'USD', fxRate) : null
+  const unrealizedGainsUSD = (currentValueUSD !== null && costBasisUSD !== null)
+    ? calcUnrealizedGains(currentValueUSD, costBasisUSD)
+    : null
+
   const currentPriceDisplay = currentPrice > 0n ? Number(currentPrice) / 100 : undefined
 
   async function handleDeleteLot(lotId: string) {
@@ -121,13 +128,22 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard label="Current Value" value={formatCurrency(currentValue, currency, { compact: true })} />
-        <StatCard label="Cost Basis" value={formatCurrency(costBasis, currency, { compact: true })} />
+        <StatCard
+          label="Current Value"
+          value={formatCurrency(currentValue, currency, { compact: true })}
+          usdValue={currentValueUSD !== null ? formatCurrency(currentValueUSD, 'USD', { compact: true }) : undefined}
+        />
+        <StatCard
+          label="Cost Basis"
+          value={formatCurrency(costBasis, currency, { compact: true })}
+          usdValue={costBasisUSD !== null ? formatCurrency(costBasisUSD, 'USD', { compact: true }) : undefined}
+        />
         <StatCard
           label="Unrealized P&L"
           value={formatCurrency(unrealizedGains, currency, { compact: true })}
           sub={formatPercent(unrealizedReturnPct, 1)}
           positive={isPositive}
+          usdValue={unrealizedGainsUSD !== null ? formatCurrency(unrealizedGainsUSD, 'USD', { compact: true }) : undefined}
         />
         <StatCard label="Shares" value={totalActiveShares.toLocaleString(undefined, { maximumFractionDigits: 4 })} />
       </div>
@@ -168,6 +184,7 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
                   <th className="py-2 px-3 text-left font-medium text-muted-foreground">Date</th>
                   <th className="py-2 px-3 text-right font-medium text-muted-foreground">Shares</th>
                   <th className="py-2 px-3 text-right font-medium text-muted-foreground">Cost/Share</th>
+                  <th className="py-2 px-3 text-right font-medium text-muted-foreground">Total Cost</th>
                   <th className="py-2 px-3 text-right font-medium text-muted-foreground">Account</th>
                   <th className="py-2 px-3 text-right font-medium text-muted-foreground">Notes</th>
                   <th className="py-2 px-3 w-20" />
@@ -190,6 +207,9 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-right tabular-nums">{sym}{costDisplay}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-medium">
+                        {sym}{(activeShares * Number(lot.costPerShare) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </td>
                       <td className="py-2.5 px-3 text-right text-muted-foreground">
                         {lot.accountType ?? '—'}
                       </td>
@@ -243,6 +263,7 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
                   <th className="py-2 px-3 text-right font-medium text-muted-foreground">Shares Sold</th>
                   <th className="py-2 px-3 text-right font-medium text-muted-foreground">Sell Price</th>
                   <th className="py-2 px-3 text-right font-medium text-muted-foreground">Proceeds</th>
+                  <th className="py-2 px-3 text-right font-medium text-muted-foreground">Return</th>
                 </tr>
               </thead>
               <tbody>
@@ -254,6 +275,12 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
                   const proceeds = lot.proceedsFromSale
                     ? `${sym}${(Number(lot.proceedsFromSale) / 100).toLocaleString()}`
                     : '—'
+                  const returnPct =
+                    lot.soldPricePerShare && lot.costPerShare
+                      ? ((Number(lot.soldPricePerShare) - Number(lot.costPerShare)) /
+                          Number(lot.costPerShare)) *
+                        100
+                      : null
                   return (
                     <tr key={lot.id} className="border-b last:border-0 hover:bg-muted/20">
                       <td className="py-2.5 px-3 tabular-nums">{formatDate(lot.purchaseDate)}</td>
@@ -263,6 +290,9 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
                       <td className="py-2.5 px-3 text-right tabular-nums">{lot.soldShares}</td>
                       <td className="py-2.5 px-3 text-right tabular-nums">{sellPrice}</td>
                       <td className="py-2.5 px-3 text-right tabular-nums">{proceeds}</td>
+                      <td className={`py-2.5 px-3 text-right tabular-nums font-medium ${returnPct === null ? '' : returnPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {returnPct === null ? '—' : `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%`}
+                      </td>
                     </tr>
                   )
                 })}
@@ -326,17 +356,21 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
 // ─── Stat Card ────────────────────────────────
 
 function StatCard({
-  label, value, sub, positive,
+  label, value, sub, positive, usdValue,
 }: {
   label: string
   value: string
   sub?: string
   positive?: boolean
+  usdValue?: string
 }) {
   return (
     <div className="rounded-xl border bg-card p-4">
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
       <p className="text-xl font-bold tabular-nums mt-1">{value}</p>
+      {usdValue && (
+        <p className="text-xs text-muted-foreground tabular-nums mt-0.5">{usdValue}</p>
+      )}
       {sub && (
         <p className={cn('text-sm font-medium mt-0.5', positive ? 'text-gain' : 'text-loss')}>
           {sub}

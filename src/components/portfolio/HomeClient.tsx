@@ -4,15 +4,18 @@ import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { usePortfolioMetrics } from '@/hooks/usePortfolio'
 import { refreshPrices } from '@/hooks/usePrices'
+import { useDailySeries } from '@/hooks/useDailySeries'
+import { useFxRate } from '@/hooks/useFxRate'
+import { buildIndexedPerformance } from '@/lib/utils/portfolio-chart'
 import { HoldingsTree } from './HoldingsTree'
 import { StalePricesBanner } from './StalePricesBanner'
 import { UnavailablePricesPanel } from './UnavailablePricesPanel'
 import { PerformanceChart } from '@/components/charts/PerformanceChart'
 import { AllocationDonut } from '@/components/charts/AllocationDonut'
-import { calcIndexedPerformance, formatCurrency, formatPercent } from '@/lib/calculations'
+import { formatCurrency, formatPercent } from '@/lib/calculations'
 import { cn, getTimeRangeCutoff } from '@/lib/utils'
 import { useUIStore, type TimeRange } from '@/store/ui'
-import type { ServerHolding, HoldingMetrics } from '@/hooks/usePortfolio'
+import type { ServerHolding } from '@/hooks/usePortfolio'
 import type { FolderRow } from '@/lib/db/queries'
 import { useBenchmark } from '@/hooks/useBenchmark'
 import { DipAlertsSection } from '@/components/dip-alerts/DipAlertsSection'
@@ -24,71 +27,6 @@ interface HomeClientProps {
   folders: FolderRow[]
 }
 
-// ─── Performance data builder ─────────────────
-//
-// WITHOUT historical prices the only anchor points we have are:
-//   • each lot's purchase date  →  its cost basis (value at purchase by definition)
-//   • today                     →  current market value (totalValue)
-//
-// For ALL time: return those two endpoints directly.  The return shown is
-// (totalValue / totalCostBasis − 1) which is the correct lifetime return.
-//
-// For period views (3M, YTD …): linearly interpolate along the all-time
-// baseline to find the estimated portfolio value at the period cutoff, then
-// return [cutoff → interpolatedValue, today → totalValue].  This distributes
-// the all-time gain proportionally over time and avoids the capital-addition
-// distortion that comes from comparing cost-basis partitions.
-
-function buildPeriodDailyValues(
-  holdingMetrics: HoldingMetrics[],
-  totalValue: bigint,
-  timeRange: TimeRange,
-): Array<{ date: Date; value: bigint }> {
-  const today = new Date()
-
-  const allLots = holdingMetrics.flatMap((h) => h.lots)
-  if (allLots.length === 0) return []
-
-  const oldestDate = allLots.reduce((min, lot) => {
-    const d = new Date(lot.purchaseDate)
-    return d < min ? d : min
-  }, today)
-
-  const totalCostBasis = holdingMetrics.reduce((sum, h) => sum + h.costBasis, 0n)
-
-  if (timeRange === 'ALL' || totalCostBasis === 0n) {
-    return [
-      { date: oldestDate, value: totalCostBasis },
-      { date: today,      value: totalValue },
-    ]
-  }
-
-  const cutoff = getTimeRangeCutoff(timeRange, today)
-
-  // If the cutoff predates the oldest lot, fall back to the full history
-  if (cutoff <= oldestDate) {
-    return [
-      { date: oldestDate, value: totalCostBasis },
-      { date: today,      value: totalValue },
-    ]
-  }
-
-  // Linear interpolation: value at cutoff = costBasis + gain × t
-  // where t = (cutoff − oldest) / (today − oldest)
-  const totalMs   = today.getTime() - oldestDate.getTime()
-  const elapsedMs = cutoff.getTime() - oldestDate.getTime()
-  const t         = elapsedMs / totalMs   // 0 < t < 1
-
-  const gain            = totalValue - totalCostBasis
-  const interpolatedGain = BigInt(Math.round(Number(gain) * t))
-  const valueAtCutoff   = totalCostBasis + interpolatedGain
-
-  return [
-    { date: cutoff, value: valueAtCutoff },
-    { date: today,  value: totalValue },
-  ]
-}
-
 // ─── Main component ───────────────────────────
 
 export function HomeClient({ holdings, portfolioName, portfolioId, folders }: HomeClientProps) {
@@ -98,6 +36,7 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
   const setOffTarget = useUIStore((s) => s.setOffTarget)
   const timeRange = useUIStore((s) => s.timeRange)
   const benchmark = useUIStore((s) => s.benchmark)
+  const { data: fxRate = 3.72 } = useFxRate()
   const [hoveredFolderId, setHoveredFolderId] = useState<string | null>(null)
 
   // Force-refresh prices for unavailable holdings, then invalidate React Query cache
@@ -123,19 +62,41 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
     setOffTarget(offTarget)
   }, [metrics, folders, setOffTarget])
 
-  const performanceData = useMemo(() => {
-    if (metrics.pricesLoading || metrics.totalValue === 0n) return []
-    const dailyValues = buildPeriodDailyValues(metrics.holdings, metrics.totalValue, timeRange)
-    if (dailyValues.length === 0) return []
-    return calcIndexedPerformance(dailyValues)
-  }, [metrics, timeRange])
-
+  // Determine start date for the selected time range
   const fromDate = useMemo(() => {
+    const today = new Date()
+    if (timeRange === 'ALL') {
+      const allLots = metrics.holdings.flatMap((h) => h.lots)
+      if (allLots.length === 0) return getTimeRangeCutoff('1Y', today)
+      return allLots.reduce((min, lot) => {
+        const d = new Date(lot.purchaseDate)
+        return d < min ? d : min
+      }, today)
+    }
+    return getTimeRangeCutoff(timeRange, today)
+  }, [timeRange, metrics.holdings])
+
+  const tickers = useMemo(
+    () => holdings.map((h) => `${h.tickerSymbol}:${h.exchange === 'TASE' ? 'TASE' : 'US'}`),
+    [holdings]
+  )
+
+  const { data: seriesMap = {}, isLoading: seriesLoading } = useDailySeries(
+    tickers,
+    fromDate,
+  )
+
+  const performanceData = useMemo(() => {
+    if (seriesLoading || Object.keys(seriesMap).length === 0) return []
+    return buildIndexedPerformance(metrics.holdings, seriesMap, fxRate, currency, fromDate)
+  }, [metrics.holdings, seriesLoading, seriesMap, fxRate, currency, fromDate])
+
+  const chartFromDate = useMemo(() => {
     if (performanceData.length === 0) return new Date()
     return performanceData[0].date
   }, [performanceData])
 
-  const { data: benchmarkData } = useBenchmark(benchmark, fromDate)
+  const { data: benchmarkData } = useBenchmark(benchmark, chartFromDate)
 
   // Build allocation segments for donut
   const donutSegments = useMemo(() => {
@@ -188,7 +149,7 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
           <PerformanceChart
             data={performanceData}
             benchmarkData={benchmarkData}
-            loading={metrics.pricesLoading}
+            loading={metrics.pricesLoading || seriesLoading}
           />
           <DipAlertsSection portfolioId={portfolioId} />
         </div>

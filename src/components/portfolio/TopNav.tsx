@@ -16,7 +16,7 @@ interface Portfolio { id: string; name: string }
 
 const NAV_ITEMS = [
   { href: '/',              label: 'Home',         icon: Home },
-  { href: '/my-portfolio',  label: 'My Portfolio', icon: Briefcase },
+  { href: '/my-portfolio',  label: 'Market',        icon: Briefcase },
   { href: '/invest',        label: 'Invest',       icon: TrendingUp },
   { href: '/visualize',     label: 'Visualize',    icon: BarChart2 },
   { href: '/allocations',   label: 'Allocations',  icon: PieChart },

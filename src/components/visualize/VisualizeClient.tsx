@@ -6,7 +6,7 @@ import { usePortfolioMetrics } from '@/hooks/usePortfolio'
 import { usePriceHistory } from '@/hooks/usePriceHistory'
 import { formatCurrency, formatPercent, calcActualAllocationPct } from '@/lib/calculations'
 import { useUIStore } from '@/store/ui'
-import { cn, formatHoldingDurationLong, calcAnnualizedReturn } from '@/lib/utils'
+import { cn, formatHoldingDurationLong } from '@/lib/utils'
 import type { ServerHolding } from '@/hooks/usePortfolio'
 
 // ─── Tabs ─────────────────────────────────────
@@ -57,9 +57,9 @@ function returnColor(pct: number): string {
 function TreemapContent(props: {
   x?: number; y?: number; width?: number; height?: number
   name?: string; value?: number; unrealizedReturnPct?: number
-  duration?: string; annualizedReturn?: number | null
+  duration?: string
 }) {
-  const { x = 0, y = 0, width = 0, height = 0, name, unrealizedReturnPct = 0, duration, annualizedReturn } = props
+  const { x = 0, y = 0, width = 0, height = 0, name, unrealizedReturnPct = 0, duration } = props
   if (width < 30 || height < 20) return null
 
   return (
@@ -84,9 +84,6 @@ function TreemapContent(props: {
       {height > 72 && duration && (
         <text x={x + 8} y={y + 48} fill="#ffffffaa" fontSize={10}>
           {duration}
-          {annualizedReturn != null
-            ? `  ·  ${annualizedReturn >= 0 ? '+' : ''}${annualizedReturn.toFixed(1)}%/yr`
-            : ''}
         </text>
       )}
     </g>
@@ -142,10 +139,7 @@ function TreemapView({ holdings }: { holdings: ReturnType<typeof usePortfolioMet
         const d = new Date(lot.purchaseDate)
         return min === null || d < min ? d : min
       }, null)
-      const duration        = oldestLot ? formatHoldingDurationLong(oldestLot) : undefined
-      const annualizedReturn = oldestLot
-        ? calcAnnualizedReturn(h.unrealizedReturnPct, oldestLot)
-        : null
+      const duration = oldestLot ? formatHoldingDurationLong(oldestLot) : undefined
 
       return {
         name: h.name,
@@ -153,7 +147,6 @@ function TreemapView({ holdings }: { holdings: ReturnType<typeof usePortfolioMet
         unrealizedReturnPct: h.unrealizedReturnPct,
         currentValue: h.currentValue,
         duration,
-        annualizedReturn,
       }
     })
 
@@ -184,14 +177,6 @@ function TreemapView({ holdings }: { holdings: ReturnType<typeof usePortfolioMet
                 {d.duration && (
                   <p className="text-xs text-muted-foreground">
                     {d.duration}
-                    {d.annualizedReturn != null && (
-                      <span className={cn(
-                        'ml-1.5',
-                        d.annualizedReturn >= 0 ? 'text-gain' : 'text-loss'
-                      )}>
-                        · {d.annualizedReturn >= 0 ? '+' : ''}{d.annualizedReturn.toFixed(1)}%/yr
-                      </span>
-                    )}
                   </p>
                 )}
               </div>

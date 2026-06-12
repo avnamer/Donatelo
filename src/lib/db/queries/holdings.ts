@@ -114,6 +114,7 @@ export async function updateHolding(
     expenseRatio?: number | null
     targetAllocationPct?: number | null
     isActive?: boolean
+    folderId?: string
   }
 ) {
   const holding = await prisma.holding.findFirst({
@@ -121,6 +122,14 @@ export async function updateHolding(
     select: { id: true },
   })
   if (!holding) return null
+
+  if (data.folderId) {
+    const targetFolder = await prisma.folder.findFirst({
+      where: { id: data.folderId, portfolio: { userId } },
+      select: { id: true },
+    })
+    if (!targetFolder) return null
+  }
 
   return prisma.holding.update({
     where: { id: holdingId },

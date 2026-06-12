@@ -1,6 +1,6 @@
 import { redirect, notFound } from 'next/navigation'
 import { getCurrentUser } from '@/lib/db/supabase-server'
-import { getHoldingWithLots } from '@/lib/db/queries'
+import { getHoldingWithLots, getFolders } from '@/lib/db/queries'
 import { HoldingDetail } from '@/components/portfolio/HoldingDetail'
 import type { Lot } from '@/types'
 
@@ -15,6 +15,8 @@ export default async function HoldingPage({ params }: Props) {
   const { id } = await params
   const holding = await getHoldingWithLots(id, user.id)
   if (!holding) notFound()
+
+  const folders = await getFolders(holding.folder.portfolioId, user.id)
 
   // Serialize BigInt fields for client component
   const lots: Lot[] = holding.lots.map((lot) => ({
@@ -41,6 +43,7 @@ export default async function HoldingPage({ params }: Props) {
         portfolioId: holding.folder.portfolioId,
       }}
       lots={lots}
+      folders={folders}
     />
   )
 }

@@ -1,15 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react'
+import { ChevronRight, Plus, Pencil, Trash2, MoreHorizontal } from 'lucide-react'
 import { usePortfolioMetrics } from '@/hooks/usePortfolio'
 import { formatCurrency, formatPercent } from '@/lib/calculations'
 import { useUIStore } from '@/store/ui'
-import { cn, formatHoldingDurationLong, calcAnnualizedReturn } from '@/lib/utils'
+import { cn, formatHoldingDurationLong } from '@/lib/utils'
 import { AddHoldingDialog } from './AddHoldingDialog'
 import { RenameFolderDialog } from './RenameFolderDialog'
+import { EditHoldingDialog } from './EditHoldingDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DrilldownChart } from '@/components/charts/DrilldownChart'
 import { useFxRate } from '@/hooks/useFxRate'
@@ -53,6 +54,7 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
   const [addHoldingOpen, setAddHoldingOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'folder' } | { type: 'holding'; id: string; ticker: string } | null>(null)
+  const [editTarget, setEditTarget] = useState<{ id: string; ticker: string; name: string; folderId: string; expenseRatio: number | null } | null>(null)
 
   // Holdings whose direct folderId is this folder
   const directHoldings = metrics.holdings.filter((h) => h.folderId === folder.id)
@@ -301,9 +303,6 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                   return min === null || d < min ? d : min
                 }, null)
                 const duration       = oldestLot ? formatHoldingDurationLong(oldestLot) : null
-                const annualizedReturn = oldestLot
-                  ? calcAnnualizedReturn(h.unrealizedReturnPct, oldestLot)
-                  : null
 
                 return (
                   <tr key={h.holdingId} className="border-b last:border-0 hover:bg-muted/20 transition-colors group">
@@ -330,14 +329,6 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                         {duration && (
                           <span className="text-xs text-muted-foreground font-normal mt-0.5">
                             {duration}
-                            {annualizedReturn !== null && (
-                              <span className={cn(
-                                'ml-1.5',
-                                annualizedReturn >= 0 ? 'text-gain' : 'text-loss'
-                              )}>
-                                ({annualizedReturn >= 0 ? '+' : ''}{annualizedReturn.toFixed(1)}%/yr)
-                              </span>
-                            )}
                           </span>
                         )}
                       </div>
@@ -358,13 +349,10 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                       </div>
                     </td>
                     <td className="py-2 px-3 w-10">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: 'holding', id: h.holdingId, ticker: h.tickerSymbol }) }}
-                        className="rounded p-1 opacity-0 group-hover:opacity-100 hover:bg-muted transition-colors"
-                        title="Delete holding"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </button>
+                      <HoldingMenu
+                        onEdit={() => setEditTarget({ id: h.holdingId, ticker: h.tickerSymbol, name: h.name, folderId: h.folderId, expenseRatio: h.expenseRatio ?? null })}
+                        onDelete={() => setConfirmDelete({ type: 'holding', id: h.holdingId, ticker: h.tickerSymbol })}
+                      />
                     </td>
                   </tr>
                 )
@@ -381,6 +369,17 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
         folderId={folder.id}
         folderName={folder.name}
       />
+      {editTarget && (
+        <EditHoldingDialog
+          open
+          onClose={() => setEditTarget(null)}
+          holdingId={editTarget.id}
+          currentName={editTarget.name}
+          currentExpenseRatio={editTarget.expenseRatio}
+          currentFolderId={editTarget.folderId}
+          folders={folders}
+        />
+      )}
       <RenameFolderDialog
         open={renameOpen}
         onClose={() => setRenameOpen(false)}
@@ -404,6 +403,52 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
         }}
         onCancel={() => setConfirmDelete(null)}
       />
+    </div>
+  )
+}
+
+// ─── Holding action menu ──────────────────────
+
+function HoldingMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="rounded p-1 opacity-0 group-hover:opacity-100 hover:bg-muted transition-colors"
+        aria-label="Actions"
+      >
+        <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-40 rounded-lg border bg-card shadow-lg z-30 py-1">
+          <button
+            onClick={() => { onEdit(); setOpen(false) }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+          <button
+            onClick={() => { onDelete(); setOpen(false) }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Remove
+          </button>
+        </div>
+      )}
     </div>
   )
 }

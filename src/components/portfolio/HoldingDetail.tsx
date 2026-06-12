@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, TrendingUp, TrendingDown, Trash2 } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, TrendingUp, TrendingDown, Trash2 } from 'lucide-react'
 import { formatCurrency, formatPercent, calcCostBasis, calcUnrealizedGains, calcUnrealizedReturnPct } from '@/lib/calculations'
 import { usePrices } from '@/hooks/usePrices'
 import { useFxRate } from '@/hooks/useFxRate'
@@ -14,9 +14,11 @@ import { SellLotDialog } from './SellLotDialog'
 import { EditLotDialog } from './EditLotDialog'
 import { RecordDividendDialog } from './RecordDividendDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { EditHoldingDialog } from './EditHoldingDialog'
 import { DrilldownChart } from '@/components/charts/DrilldownChart'
 import type { Lot } from '@/types'
 import type { Currency } from '@/types'
+import type { FolderRow } from '@/lib/db/queries'
 
 interface HoldingInfo {
   id: string
@@ -32,9 +34,10 @@ interface HoldingInfo {
 interface HoldingDetailProps {
   holding: HoldingInfo
   lots: Lot[]
+  folders?: FolderRow[]
 }
 
-export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
+export function HoldingDetail({ holding, lots, folders = [] }: HoldingDetailProps) {
   const router = useRouter()
   const currency = useUIStore((s) => s.currency)
   const { data: fxRate = 3.72 } = useFxRate()
@@ -46,6 +49,7 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
   const priceCurrency = (priceData?.currency ?? (holding.exchange === 'TASE' ? 'ILS' : 'USD')) as Currency
 
   const [addLotOpen, setAddLotOpen] = useState(false)
+  const [editHoldingOpen, setEditHoldingOpen] = useState(false)
   const [recordDividendOpen, setRecordDividendOpen] = useState(false)
   const [sellTarget, setSellTarget] = useState<Lot | null>(null)
   const [editLotTarget, setEditLotTarget] = useState<Lot | null>(null)
@@ -110,6 +114,15 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
           <p className="text-muted-foreground mt-0.5">{holding.name}</p>
         </div>
         <div className="flex items-center gap-2">
+          {folders.length > 0 && (
+            <button
+              onClick={() => setEditHoldingOpen(true)}
+              className="rounded-lg border p-2 hover:bg-muted transition-colors"
+              title="Edit holding"
+            >
+              <Pencil className="h-4 w-4 text-muted-foreground" />
+            </button>
+          )}
           <button
             onClick={() => setRecordDividendOpen(true)}
             className="flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
@@ -349,6 +362,17 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
         onConfirm={() => { if (deleteLotTarget) handleDeleteLot(deleteLotTarget); setDeleteLotTarget(null) }}
         onCancel={() => setDeleteLotTarget(null)}
       />
+      {folders.length > 0 && (
+        <EditHoldingDialog
+          open={editHoldingOpen}
+          onClose={() => setEditHoldingOpen(false)}
+          holdingId={holding.id}
+          currentName={holding.name}
+          currentExpenseRatio={holding.expenseRatio}
+          currentFolderId={holding.folderId}
+          folders={folders}
+        />
+      )}
     </div>
   )
 }

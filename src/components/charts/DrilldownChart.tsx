@@ -53,17 +53,35 @@ const PERIODS: { id: SeriesPeriod; label: string }[] = [
 // ─── Helpers ──────────────────────────────────
 
 /**
+ * Remove corrupted price data caused by unit-scale changes in the cache
+ * (e.g. prices stored as ILS one day and agora the next, creating a 100x jump).
+ *
+ * Strategy: scan for consecutive price jumps > MAX_RATIO (5×). If found,
+ * truncate everything BEFORE the last such jump — the later data is assumed
+ * to be in the correct scale.
+ */
+const SCALE_JUMP_THRESHOLD = 5
+
+function sanitizePriceSeries(
+  points: { date: string; price: number }[]
+): { date: string; price: number }[] {
+  if (points.length < 2) return points
+  let lastScaleShift = -1
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1].price
+    const curr = points[i].price
+    if (prev > 0 && (curr / prev > SCALE_JUMP_THRESHOLD || curr / prev < 1 / SCALE_JUMP_THRESHOLD)) {
+      lastScaleShift = i
+    }
+  }
+  return lastScaleShift >= 0 ? points.slice(lastScaleShift) : points
+}
+
+/**
  * Compute a value-weighted portfolio return index (indexed to 100 at start).
  *
- * Algorithm — avoids FX distortion by working in each security's own currency:
- *  1. For each holding compute its per-date price return relative to its
- *     anchor price (first point in its series, which the API sets to startDate).
- *  2. Weight each holding's return by its current value (proportional weight).
- *  3. Combined index(date) = 100 × Σ(weight_i × price_i(date) / anchorPrice_i)
- *
- * This way USD holdings contribute their USD return and ILS holdings their ILS
- * return, all blended by current portfolio weight — FX movements don't distort
- * the chart.
+ * Each holding's return is computed in its own currency (price/anchorPrice),
+ * then blended by current-value weights — FX movements don't distort the chart.
  */
 function buildIndexedSeries(
   holdings: DrilldownHolding[],
@@ -95,12 +113,15 @@ function buildIndexedSeries(
   for (const h of activeHoldings) {
     const s = seriesData[h.tickerSymbol]
     if (!s) continue
+    // Remove corrupted rows caused by unit-scale changes in the cache
+    const clean = sanitizePriceSeries(s.points)
+    if (clean.length < 2) continue
     priceMap[h.tickerSymbol] = {}
-    for (const p of s.points) {
+    for (const p of clean) {
       priceMap[h.tickerSymbol][p.date] = p.price
       dateSet.add(p.date)
     }
-    anchorPrice[h.tickerSymbol] = s.points[0].price
+    anchorPrice[h.tickerSymbol] = clean[0].price
   }
 
   const dates = Array.from(dateSet).sort()

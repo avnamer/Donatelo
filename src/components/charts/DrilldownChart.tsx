@@ -110,7 +110,7 @@ function buildIndexedSeries(
   fxRate: number,
   _portfolioCurrency: string,
   period: SeriesPeriod,
-): { date: string; index: number }[] {
+): { date: string; index: number; price?: number; currency?: string }[] {
   if (holdings.length === 0) return []
 
   const activeHoldings = holdings.filter((h) => (seriesData[h.tickerSymbol]?.points.length ?? 0) >= 2)
@@ -162,17 +162,18 @@ function buildIndexedSeries(
   const dates = Array.from(dateSet).sort()
 
   // Walk dates, carry forward last known price per holding
+  const isSingleHolding = activeHoldings.length === 1
+  const singleCurrency = isSingleHolding ? seriesData[activeHoldings[0].tickerSymbol]?.currency : undefined
+
   const lastPrice: Record<string, number> = {}
-  const result: { date: string; index: number }[] = []
+  const result: { date: string; index: number; price?: number; currency?: string }[] = []
 
   for (const date of dates) {
-    // Update last-known prices
     for (const h of activeHoldings) {
       const pm = priceMap[h.tickerSymbol]
       if (pm?.[date] !== undefined) lastPrice[h.tickerSymbol] = pm[date]
     }
 
-    // Compute weighted index: Σ weight_i × (price_i / anchor_i)
     let idx = 0
     let weightSum = 0
     for (const h of activeHoldings) {
@@ -185,9 +186,17 @@ function buildIndexedSeries(
 
     if (weightSum > 0) {
       const index = (idx / weightSum) * 100
-      // Guard against corrupted price data (e.g. a cached price stored in wrong scale)
       if (isFinite(index) && index > 0 && index < 100_000) {
-        result.push({ date, index })
+        const entry: { date: string; index: number; price?: number; currency?: string } = { date, index }
+        if (isSingleHolding) {
+          const raw = lastPrice[activeHoldings[0].tickerSymbol]
+          if (raw !== undefined) {
+            // price_cache stores in cents/agorot — divide by 100 for display
+            entry.price = raw / 100
+            entry.currency = singleCurrency
+          }
+        }
+        result.push(entry)
       }
     }
   }
@@ -200,8 +209,13 @@ function buildIndexedSeries(
 
 interface TooltipProps {
   active?: boolean
-  payload?: Array<{ dataKey: string; value: number; color: string }>
+  payload?: Array<{ dataKey: string; value: number; color: string; payload: Record<string, unknown> }>
   label?: string
+}
+
+function formatPrice(price: number, currency: string) {
+  if (currency === 'ILS') return `₪${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function CustomTooltip({ active, payload, label }: TooltipProps) {
@@ -209,9 +223,17 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
   const point = payload.find((p) => p.dataKey === 'index')
   if (!point) return null
   const change = point.value - 100
+  const price = point.payload.price as number | undefined
+  const currency = point.payload.currency as string | undefined
+
   return (
-    <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-sm min-w-[130px]">
-      <p className="text-muted-foreground text-xs mb-0.5">{label}</p>
+    <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-sm min-w-[140px]">
+      <p className="text-muted-foreground text-xs mb-1">{label}</p>
+      {price !== undefined && currency && (
+        <p className="text-xs font-medium tabular-nums mb-0.5">
+          {formatPrice(price, currency)}
+        </p>
+      )}
       <p
         className="text-xs font-semibold tabular-nums"
         style={{ color: point.color }}
@@ -249,14 +271,17 @@ export function DrilldownChart({
 
   const { data: seriesData, loading } = usePriceSeries(tickerKeys, period, earliestDate)
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo((): { date: string; index: number; price?: number; currency?: string }[] => {
     if (loading || Object.keys(seriesData).length === 0) return []
     const indexed = buildIndexedSeries(holdings, seriesData, fxRate, portfolioCurrency, period)
-    // Format dates for display
-    return indexed.map((p) => ({
-      date: formatDate(new Date(p.date)),
-      index: p.index,
-    }))
+    return indexed.map((p) => {
+      const entry: { date: string; index: number; price?: number; currency?: string } = {
+        date: formatDate(new Date(p.date)),
+        index: p.index,
+      }
+      if (p.price !== undefined) { entry.price = p.price; entry.currency = p.currency }
+      return entry
+    })
   }, [seriesData, loading, holdings, fxRate, portfolioCurrency])
 
   const lastIndex = chartData[chartData.length - 1]?.index ?? 100

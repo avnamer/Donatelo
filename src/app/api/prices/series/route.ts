@@ -24,6 +24,7 @@ type SeriesPeriod = (typeof VALID_PERIODS)[number]
 const QuerySchema = z.object({
   tickers: z.string().min(1),
   period: z.enum(VALID_PERIODS),
+  sinceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 })
 
 // How many calendar days before startDate we'll search for an anchor price
@@ -49,8 +50,13 @@ export async function GET(request: NextRequest) {
   const parsed = QuerySchema.safeParse(raw)
   if (!parsed.success) return NextResponse.json({ error: 'Invalid params' }, { status: 400 })
 
-  const { tickers, period } = parsed.data
-  const startDate = getPeriodStartDate(period)
+  const { tickers, period, sinceDate } = parsed.data
+  const periodStart = getPeriodStartDate(period)
+  // Cap start to the earliest actual purchase date so the chart doesn't show
+  // price history from before the user owned anything.
+  const startDate = sinceDate
+    ? new Date(Math.max(periodStart.getTime(), new Date(sinceDate).getTime()))
+    : periodStart
   const anchorLookbackDate = new Date(startDate.getTime() - ANCHOR_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
   const startDateStr = startDate.toISOString().slice(0, 10)
 

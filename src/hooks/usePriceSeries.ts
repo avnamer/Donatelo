@@ -14,7 +14,7 @@ export interface TickerSeries {
   points: PricePoint[]
 }
 
-export function usePriceSeries(tickers: string[], period: SeriesPeriod) {
+export function usePriceSeries(tickers: string[], period: SeriesPeriod, sinceDate?: string) {
   const [data, setData] = useState<Record<string, TickerSeries>>({})
   const [loading, setLoading] = useState(false)
 
@@ -24,12 +24,13 @@ export function usePriceSeries(tickers: string[], period: SeriesPeriod) {
     if (tickers.length === 0) return
     setLoading(true)
     const params = new URLSearchParams({ tickers: key, period })
+    if (sinceDate) params.set('sinceDate', sinceDate)
     fetch(`/api/prices/series?${params}`)
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, period])
+  }, [key, period, sinceDate])
 
   return { data, loading }
 }

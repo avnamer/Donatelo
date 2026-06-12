@@ -30,6 +30,8 @@ export interface DrilldownHolding {
   activeShares: number
   // current value in portfolio currency (cents) — used to weight missing-data periods
   currentValue: number
+  // ISO date of earliest lot purchase — chart will not show returns before this date
+  earliestPurchaseDate?: string
 }
 
 interface DrilldownChartProps {
@@ -203,7 +205,16 @@ export function DrilldownChart({
     [holdings.map((h) => `${h.tickerSymbol}:${h.exchange}`).join(',')]
   )
 
-  const { data: seriesData, loading } = usePriceSeries(tickerKeys, period)
+  // Earliest lot date across all holdings — cap the chart so it never shows
+  // returns from before the user actually owned any position.
+  const earliestDate = useMemo(() => {
+    const dates = holdings
+      .map((h) => h.earliestPurchaseDate)
+      .filter((d): d is string => !!d)
+    return dates.length > 0 ? dates.sort()[0] : undefined
+  }, [holdings.map((h) => h.earliestPurchaseDate ?? '').join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data: seriesData, loading } = usePriceSeries(tickerKeys, period, earliestDate)
 
   const chartData = useMemo(() => {
     if (loading || Object.keys(seriesData).length === 0) return []

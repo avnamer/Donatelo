@@ -159,12 +159,19 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
       {/* Performance chart */}
       {allHere.length > 0 && (
         <DrilldownChart
-          holdings={allHere.map((h) => ({
-            tickerSymbol: h.tickerSymbol,
-            exchange: h.exchange,
-            activeShares: h.activeShares,
-            currentValue: Number(h.currentValue),
-          }))}
+          holdings={allHere.map((h) => {
+            const dates = h.lots
+              .filter((l) => l.shares - l.soldShares > 0)
+              .map((l) => new Date(l.purchaseDate).toISOString().slice(0, 10))
+            const earliest = dates.length > 0 ? dates.sort()[0] : undefined
+            return {
+              tickerSymbol: h.tickerSymbol,
+              exchange: h.exchange,
+              activeShares: h.activeShares,
+              currentValue: Number(h.currentValue),
+              earliestPurchaseDate: earliest,
+            }
+          })}
           fxRate={fxRate}
           portfolioCurrency={currency}
           label={`${folder.name} — Performance`}

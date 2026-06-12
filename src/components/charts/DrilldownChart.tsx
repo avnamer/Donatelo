@@ -128,7 +128,11 @@ function buildIndexedSeries(
     }
 
     if (weightSum > 0) {
-      result.push({ date, index: (idx / weightSum) * 100 })
+      const index = (idx / weightSum) * 100
+      // Guard against corrupted price data (e.g. a cached price stored in wrong scale)
+      if (isFinite(index) && index > 0 && index < 100_000) {
+        result.push({ date, index })
+      }
     }
   }
 

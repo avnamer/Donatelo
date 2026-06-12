@@ -101,10 +101,19 @@ export async function GET(request: NextRequest) {
     const points: { date: string; price: number }[] = []
 
     // Prepend the anchor point (period start) if we have a price before startDate
-    // and the series doesn't already start at or before startDate
+    // and the series doesn't already start at or before startDate.
+    // Validate: discard anchors that differ from the first series price by more
+    // than 10x — these indicate corrupted cache rows stored in the wrong scale.
     const anchor = anchorBySymbol.get(symbol)
+    const firstSeriesPrice = symbolRows[0] ? Number(symbolRows[0].price) : null
     const seriesStartDate = symbolRows[0]?.priceDate?.toISOString().slice(0, 10)
-    if (anchor && seriesStartDate !== startDateStr) {
+    const anchorValid =
+      anchor &&
+      anchor.price > 0 &&
+      (firstSeriesPrice === null ||
+        firstSeriesPrice === 0 ||
+        (anchor.price / firstSeriesPrice <= 10 && anchor.price / firstSeriesPrice >= 0.1))
+    if (anchorValid && seriesStartDate !== startDateStr) {
       points.push({ date: startDateStr, price: anchor.price })
     }
 

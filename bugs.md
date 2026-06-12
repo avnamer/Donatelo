@@ -13,6 +13,7 @@
 |---|--------|-------|---------|
 | 1 | 🔴 | TASE DataWise API blocked by WAF | Incapsula blocks server-side requests. Workaround: Yahoo Finance + Bizportal scraper. |
 | 2 | 🔴 | "Market closed" detection | `StalePricesBanner` exists but logic for detecting market hours and invalidating cache needs review. |
+| 3 | 🔴 | DrilldownChart accuracy — needs real-world verification | After multiple fixes (cost-basis anchor, sinceDate cap, cost-basis weights), chart returns should be close to KPI. Known approximations: (1) USD holdings use current fxRate as anchor conversion — not historical rate at purchase time, so FX drift may cause a gap; (2) DCA intermediate points are approximate, not true time-weighted returns. Need to manually verify in production with a few representative holdings/folders. |
 
 ---
 

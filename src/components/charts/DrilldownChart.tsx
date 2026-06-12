@@ -82,27 +82,41 @@ function sanitizePriceSeries(
   return lastScaleShift >= 0 ? points.slice(lastScaleShift) : points
 }
 
+function getPeriodStartDate(period: SeriesPeriod): Date {
+  const now = new Date()
+  switch (period) {
+    case '30d': return new Date(now.getTime() - 30 * 86400000)
+    case '90d': return new Date(now.getTime() - 90 * 86400000)
+    case '6m':  return new Date(now.getTime() - 180 * 86400000)
+    case 'ytd': return new Date(now.getFullYear(), 0, 1)
+    case '1y':  return new Date(now.getTime() - 365 * 86400000)
+    case '3y':  return new Date(now.getTime() - 3 * 365 * 86400000)
+  }
+}
+
 /**
- * Compute a value-weighted portfolio return index (indexed to 100 at start).
+ * Compute a cost-basis-weighted portfolio return index (indexed to 100 at start).
  *
- * Each holding's return is computed in its own currency (price/anchorPrice),
- * then blended by current-value weights — FX movements don't distort the chart.
+ * Anchor strategy:
+ *   - If the period was capped by earliestPurchaseDate (holding is newer than the
+ *     period) → use cost-basis-equivalent anchor so the all-time return ≈ KPI.
+ *   - Otherwise → use price at period start so the chart shows true period return.
+ *
+ * Weights = cost basis (ensures blended return = totalValue/totalCost = KPI).
  */
 function buildIndexedSeries(
   holdings: DrilldownHolding[],
   seriesData: Record<string, { currency: string; points: { date: string; price: number }[] }>,
-  _fxRate: number,
+  fxRate: number,
   _portfolioCurrency: string,
+  period: SeriesPeriod,
 ): { date: string; index: number }[] {
   if (holdings.length === 0) return []
 
-  // Filter to holdings that have at least 2 price points
   const activeHoldings = holdings.filter((h) => (seriesData[h.tickerSymbol]?.points.length ?? 0) >= 2)
   if (activeHoldings.length === 0) return []
 
-  // Weight by costBasis so the blended return equals totalValue/totalCostBasis,
-  // matching the KPI unrealized return. (Value-weighting would give a different
-  // result when holdings have different individual returns.)
+  // Cost-basis weights so blended return = totalValue/totalCostBasis = KPI
   const totalCost = activeHoldings.reduce((s, h) => s + h.costBasis, 0)
   const weights: Record<string, number> = {}
   if (totalCost > 0) {
@@ -111,6 +125,8 @@ function buildIndexedSeries(
     const eq = 1 / activeHoldings.length
     for (const h of activeHoldings) weights[h.tickerSymbol] = eq
   }
+
+  const periodStart = getPeriodStartDate(period)
 
   const priceMap: Record<string, Record<string, number>> = {}
   const anchorPrice: Record<string, number> = {}
@@ -126,7 +142,21 @@ function buildIndexedSeries(
       priceMap[h.tickerSymbol][p.date] = p.price
       dateSet.add(p.date)
     }
-    anchorPrice[h.tickerSymbol] = clean[0].price
+
+    // If the period was capped to purchase date, use cost-basis-equivalent anchor
+    // so the chart shows true lifetime return matching the KPI.
+    // Otherwise use price at period start for a true period return.
+    const periodCapped =
+      h.earliestPurchaseDate != null &&
+      new Date(h.earliestPurchaseDate) > periodStart
+    if (periodCapped && h.costBasis > 0 && h.activeShares > 0) {
+      const isUSD = s.currency === 'USD'
+      anchorPrice[h.tickerSymbol] = isUSD
+        ? h.costBasis / (fxRate * h.activeShares)
+        : h.costBasis / h.activeShares
+    } else {
+      anchorPrice[h.tickerSymbol] = clean[0].price
+    }
   }
 
   const dates = Array.from(dateSet).sort()
@@ -221,7 +251,7 @@ export function DrilldownChart({
 
   const chartData = useMemo(() => {
     if (loading || Object.keys(seriesData).length === 0) return []
-    const indexed = buildIndexedSeries(holdings, seriesData, fxRate, portfolioCurrency)
+    const indexed = buildIndexedSeries(holdings, seriesData, fxRate, portfolioCurrency, period)
     // Format dates for display
     return indexed.map((p) => ({
       date: formatDate(new Date(p.date)),

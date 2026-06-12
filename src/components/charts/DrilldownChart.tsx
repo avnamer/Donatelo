@@ -3,6 +3,18 @@
 // ─────────────────────────────────────────────
 // DrilldownChart — weighted performance chart for folder / holding level.
 //
+// TODO: verify chart accuracy in production
+//   - For short periods (30D/90D): chart return should closely match the actual
+//     price movement of the holdings over that period.
+//   - For long periods capped by purchase date (e.g. 3Y on a 2-year-old holding):
+//     chart return at today should ≈ KPI unrealized return.
+//   - Known approximation: cost-basis anchor uses current fxRate for USD holdings,
+//     not the historical fxRate at purchase time. This may introduce a small gap
+//     when USD/ILS rate has moved significantly since the first buy.
+//   - For DCA portfolios, intermediate chart points (not today) are approximate:
+//     they show "where would the portfolio be if bought all at average cost",
+//     not the true time-weighted return accounting for each lot's timing.
+//
 // For a folder: computes a value-weighted portfolio index across all holdings.
 // For a single holding: simply indexes the holding's price series to 100.
 //

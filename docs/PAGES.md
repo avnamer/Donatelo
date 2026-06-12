@@ -102,10 +102,14 @@ Sub-folders table (if any): Name | Value | Gain/Return | Alloc
 Holdings table: Name | Value | Gain/Return | Alloc
 ```
 
-**DrilldownChart:** value-weighted portfolio return across all holdings in the folder
+**DrilldownChart:** cost-basis-weighted portfolio return across all holdings in the folder
 (direct + sub-folder holdings). Fetches price series from `/api/prices/series`.
 Period selector: 30D · 90D · 6M · YTD · 1Y · 3Y.
-Shows "No price history for this period" if price_cache lacks data for the range.
+- Anchor strategy: if the holding is newer than the selected period, uses cost-basis-equivalent
+  anchor price so the lifetime return ≈ KPI unrealized return. Otherwise anchors to period start.
+- `sinceDate` param caps series to earliest lot purchase date (no pre-ownership price history).
+- Hover tooltip shows % change from period start; for single-holding, also shows actual price.
+- Shows "No price history for this period" if price_cache lacks data for the range.
 
 ---
 
@@ -132,7 +136,9 @@ SOLD LOTS table:   Bought | Sold | Shares Sold | Sell Price | Proceeds
 ```
 
 **DrilldownChart:** single-security price history from `price_cache`, indexed to 100
-at start of period. Period selector: 30D · 90D · 6M · YTD · 1Y · 3Y.
+at start of period (or cost-basis anchor if holding is newer than the period).
+Period selector: 30D · 90D · 6M · YTD · 1Y · 3Y.
+Hover tooltip shows actual price + % change from period start.
 
 **Interactions:**
 - [Sell] on a lot → SellLotDialog
@@ -413,24 +419,36 @@ interface PerformanceChartProps {
 ```
 
 ### Drilldown Chart (`src/components/charts/DrilldownChart.tsx`)
-Folder / holding-level performance — value-weighted area chart indexed to 100.
+Folder / holding-level performance — cost-basis-weighted area chart indexed to 100.
 Fetches price time series from `/api/prices/series` via `usePriceSeries` hook.
 Period selector: 30D · 90D · 6M · YTD · 1Y · 3Y.
 Used on `/folders/[id]` and `/holdings/[id]`.
 
+**Anchor strategy:**
+- Period capped by `earliestPurchaseDate` (holding newer than period): anchor = `costBasis / (fxRate × shares)` for USD, `costBasis / shares` for ILS → lifetime return ≈ KPI
+- Period not capped: anchor = price at period start → shows true period return
+
+**Weighting:** cost-basis weights ensure blended return = `totalValue / totalCostBasis` = KPI.
+
+**Tooltip:** % change from period start. Single-holding also shows actual security price.
+
+**Corruption guard:** `sanitizePriceSeries()` detects 5× consecutive jumps and truncates pre-jump data. `/api/prices/series` prepends an anchor row (last price before period start, within 14 days) and validates it against the first series price (10× threshold).
+
 ```typescript
 interface DrilldownHolding {
   tickerSymbol: string
-  exchange: string       // 'TASE' | 'US' | ...
+  exchange: string            // 'TASE' | 'US' | ...
   activeShares: number
-  currentValue: number   // cents, used for weighting fallback
+  currentValue: number        // portfolio currency cents — weighting fallback
+  costBasis: number           // portfolio currency cents — anchor + weighting
+  earliestPurchaseDate?: string  // ISO date — caps series start
 }
 
 interface DrilldownChartProps {
   holdings: DrilldownHolding[]
-  fxRate?: number            // ILS per USD (default 3.72)
-  portfolioCurrency?: string // 'ILS' | 'USD'
-  label?: string             // chart title
+  fxRate?: number             // ILS per USD (default 3.72)
+  portfolioCurrency?: string  // 'ILS' | 'USD'
+  label?: string              // chart title
 }
 ```
 

@@ -193,6 +193,16 @@ See [`bugs.md`](./bugs.md) for the live bug tracker.
   - Responsive: holding name hidden on `< sm`, Shares column hidden on `< sm`, Notes column hidden on `< md`
 - Clean build ✓
 
+### 2026-06-12 — DrilldownChart Accuracy Fixes
+- **Price series charts** added to `/folders/[id]` and `/holdings/[id]` — period selector 30D/90D/6M/YTD/1Y/3Y
+- **Anchor fix**: series API prepends last cached price before period start (14-day lookback window) as synthetic anchor point; validates anchor vs first series price (10× threshold)
+- **Scale corruption guard**: `sanitizePriceSeries()` detects 5× consecutive jumps and truncates pre-jump data; DB cleanup script deleted 48 corrupted SMSH.TA rows
+- **FX distortion fix**: each holding's return computed in its own currency; FX rate not applied to historical prices
+- **Pre-ownership history fix**: `sinceDate` param caps series to `max(periodStart, earliestLotDate)` so chart never shows returns from before the user held the position
+- **DCA / cost-basis anchor**: when period is capped by purchase date, anchor = `costBasis / shares` (in price currency) so lifetime chart return ≈ KPI unrealized return
+- **Weighting fix**: cost-basis weights replace value weights so blended folder return = `totalValue / totalCostBasis` = KPI
+- **Tooltip upgrade**: shows actual security price + % change from period start (price shown for single-holding only)
+
 ### 2026-05-20 — Visualize Enhancements
 - Treemap: security full name instead of ticker; period filter (Week/Month/6M/Year/All Time)
 - New `GET /api/prices/history` — DB cache first, Yahoo Finance fallback

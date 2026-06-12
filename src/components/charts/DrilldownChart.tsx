@@ -30,6 +30,9 @@ export interface DrilldownHolding {
   activeShares: number
   // current value in portfolio currency (cents) — used to weight missing-data periods
   currentValue: number
+  // cost basis in portfolio currency (cents/agorot) — used to compute anchor price
+  // so the chart return matches the KPI unrealized return
+  costBasis: number
   // ISO date of earliest lot purchase — chart will not show returns before this date
   earliestPurchaseDate?: string
 }
@@ -88,7 +91,7 @@ function sanitizePriceSeries(
 function buildIndexedSeries(
   holdings: DrilldownHolding[],
   seriesData: Record<string, { currency: string; points: { date: string; price: number }[] }>,
-  _fxRate: number,
+  fxRate: number,
   _portfolioCurrency: string,
 ): { date: string; index: number }[] {
   if (holdings.length === 0) return []
@@ -107,7 +110,13 @@ function buildIndexedSeries(
     for (const h of activeHoldings) weights[h.tickerSymbol] = eq
   }
 
-  // Pre-build date→price maps and anchor prices per holding
+  // Pre-build date→price maps and anchor prices per holding.
+  // Anchor = cost-basis-equivalent price so the chart return matches the KPI
+  // unrealized return (not distorted by DCA or missing pre-purchase history).
+  //
+  // For ILS holding:  anchorPrice (ILS agorot) = costBasis_ILS_agorot / activeShares
+  // For USD holding:  anchorPrice (USD cents)  = costBasis_ILS_agorot / (fxRate × activeShares)
+  //   (uses current fxRate, same as the KPI calculation, so returns align)
   const priceMap: Record<string, Record<string, number>> = {}
   const anchorPrice: Record<string, number> = {}
   const dateSet = new Set<string>()
@@ -115,7 +124,6 @@ function buildIndexedSeries(
   for (const h of activeHoldings) {
     const s = seriesData[h.tickerSymbol]
     if (!s) continue
-    // Remove corrupted rows caused by unit-scale changes in the cache
     const clean = sanitizePriceSeries(s.points)
     if (clean.length < 2) continue
     priceMap[h.tickerSymbol] = {}
@@ -123,7 +131,15 @@ function buildIndexedSeries(
       priceMap[h.tickerSymbol][p.date] = p.price
       dateSet.add(p.date)
     }
-    anchorPrice[h.tickerSymbol] = clean[0].price
+    // Derive anchor from cost basis so return = (currentPrice/anchor - 1) = KPI return
+    if (h.costBasis > 0 && h.activeShares > 0) {
+      const isUSD = s.currency === 'USD'
+      anchorPrice[h.tickerSymbol] = isUSD
+        ? h.costBasis / (fxRate * h.activeShares)
+        : h.costBasis / h.activeShares
+    } else {
+      anchorPrice[h.tickerSymbol] = clean[0].price
+    }
   }
 
   const dates = Array.from(dateSet).sort()

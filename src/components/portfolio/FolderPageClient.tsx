@@ -160,16 +160,16 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
       {allHere.length > 0 && (
         <DrilldownChart
           holdings={allHere.map((h) => {
-            const dates = h.lots
+            const activeDates = h.lots
               .filter((l) => l.shares - l.soldShares > 0)
               .map((l) => new Date(l.purchaseDate).toISOString().slice(0, 10))
-            const earliest = dates.length > 0 ? dates.sort()[0] : undefined
             return {
               tickerSymbol: h.tickerSymbol,
               exchange: h.exchange,
               activeShares: h.activeShares,
               currentValue: Number(h.currentValue),
-              earliestPurchaseDate: earliest,
+              costBasis: Number(h.costBasis),
+              earliestPurchaseDate: activeDates.length > 0 ? activeDates.sort()[0] : undefined,
             }
           })}
           fxRate={fxRate}

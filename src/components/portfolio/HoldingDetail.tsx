@@ -140,6 +140,7 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
             exchange: holding.exchange,
             activeShares: totalActiveShares,
             currentValue: Number(currentValue),
+            costBasis: Number(costBasis),
             earliestPurchaseDate: activeLots
               .map((l) => new Date(l.purchaseDate).toISOString().slice(0, 10))
               .sort()[0],

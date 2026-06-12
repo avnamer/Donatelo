@@ -100,11 +100,13 @@ function buildIndexedSeries(
   const activeHoldings = holdings.filter((h) => (seriesData[h.tickerSymbol]?.points.length ?? 0) >= 2)
   if (activeHoldings.length === 0) return []
 
-  // Compute weights based on currentValue (fall back to equal weight if all zero)
-  const totalValue = activeHoldings.reduce((s, h) => s + h.currentValue, 0)
+  // Weight by costBasis so the blended return equals totalValue/totalCostBasis,
+  // matching the KPI unrealized return. (Value-weighting would give a different
+  // result when holdings have different individual returns.)
+  const totalCost = activeHoldings.reduce((s, h) => s + h.costBasis, 0)
   const weights: Record<string, number> = {}
-  if (totalValue > 0) {
-    for (const h of activeHoldings) weights[h.tickerSymbol] = h.currentValue / totalValue
+  if (totalCost > 0) {
+    for (const h of activeHoldings) weights[h.tickerSymbol] = h.costBasis / totalCost
   } else {
     const eq = 1 / activeHoldings.length
     for (const h of activeHoldings) weights[h.tickerSymbol] = eq

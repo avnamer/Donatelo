@@ -79,6 +79,13 @@ realized_gains = Σ(lot.proceeds_from_sale - lot.sold_shares × lot.cost_per_sha
 lot_realized = proceeds_from_sale - (sold_shares × cost_per_share)
 ```
 
+**Per-lot return % (from purchase to sale):**
+```
+lot_return_pct = (sold_price_per_share - cost_per_share) / cost_per_share × 100
+```
+Displayed in the Sold Lots table in HoldingDetail (green = gain, red = loss).
+Stored as: `realized_gain` (absolute, in agorot/cents) on the `SECURITY_SELL` transaction.
+
 ---
 
 ## 5. Total Return (Money-Weighted)

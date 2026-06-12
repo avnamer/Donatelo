@@ -51,6 +51,10 @@ export async function PATCH(
     })
     if (!lot) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    // Realized gain = proceeds - cost basis of sold shares
+    const costBasis = BigInt(Math.round(soldShares * Number(lot.costPerShare)))
+    const realizedGain = proceedsFromSale - costBasis
+
     // Auto-create SECURITY_SELL transaction
     const holding = await prisma.lot.findFirst({
       where: { id },
@@ -66,6 +70,7 @@ export async function PATCH(
         lotId: id,
         shares: soldShares,
         pricePerShare: soldPricePerShare,
+        realizedGain,
       })
     }
 

@@ -57,6 +57,8 @@ then layer on features. Each phase ships something usable.
 - [x] Add / Edit / Delete lot
 - [x] Mark lot as sold — partial or full (SellLotDialog)
 - [x] Price chart: 1W, 1Y, Recharts area chart
+- [x] Sold lots table: show return % from purchase date to sale date (green/red)
+- [ ] **⚠️ TODO: Test sold-lot return % display** — verify `realizedGain` is saved correctly on `SECURITY_SELL` transaction and that % column renders as expected in production
 
 ### 1.9 Cash Accounts
 - [x] Add ILS / USD cash account — AddCashDialog + `/api/cash-accounts`
@@ -238,6 +240,7 @@ then layer on features. Each phase ships something usable.
 ## Open Items (prioritized)
 
 ### High priority
+- [ ] **⚠️ Verify: sold-lot return % in production** — sell a lot and confirm the Return % column shows the correct value in HoldingDetail, and that `realizedGain` is populated on the `SECURITY_SELL` transaction in the DB
 - [ ] **Allocations drill-down** — expand folders → subfolders → holdings in the allocations table, set target % at every level. Plan fully written, 3 files to modify, no schema changes: `docs/superpowers/plans/2026-05-17-allocations-drilldown.md`
 - [ ] **Cash accounts** — show balance in holdings table + update balance dialog
 - [ ] **Dividend Yield KPI** — annual dividend data per holding (available in dividend cache)

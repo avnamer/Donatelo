@@ -14,6 +14,7 @@ import { SellLotDialog } from './SellLotDialog'
 import { EditLotDialog } from './EditLotDialog'
 import { RecordDividendDialog } from './RecordDividendDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { DrilldownChart } from '@/components/charts/DrilldownChart'
 import type { Lot } from '@/types'
 import type { Currency } from '@/types'
 
@@ -130,6 +131,21 @@ export function HoldingDetail({ holding, lots }: HoldingDetailProps) {
         />
         <StatCard label="Shares" value={totalActiveShares.toLocaleString(undefined, { maximumFractionDigits: 4 })} />
       </div>
+
+      {/* Performance chart */}
+      {totalActiveShares > 0 && (
+        <DrilldownChart
+          holdings={[{
+            tickerSymbol: holding.tickerSymbol,
+            exchange: holding.exchange,
+            activeShares: totalActiveShares,
+            currentValue: Number(currentValue),
+          }]}
+          fxRate={fxRate}
+          portfolioCurrency={currency}
+          label={`${holding.tickerSymbol} — Performance`}
+        />
+      )}
 
       {/* Active Lots */}
       <section>

@@ -11,6 +11,8 @@ import { cn, formatHoldingDurationLong, calcAnnualizedReturn } from '@/lib/utils
 import { AddHoldingDialog } from './AddHoldingDialog'
 import { RenameFolderDialog } from './RenameFolderDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { DrilldownChart } from '@/components/charts/DrilldownChart'
+import { useFxRate } from '@/hooks/useFxRate'
 import type { ServerHolding } from '@/hooks/usePortfolio'
 import type { FolderRow } from '@/lib/db/queries'
 
@@ -46,6 +48,7 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
   const router = useRouter()
   const currency = useUIStore((s) => s.currency)
   const metrics = usePortfolioMetrics(holdings, buildFolderMap(folders))
+  const { data: fxRate = 3.72 } = useFxRate()
 
   const [addHoldingOpen, setAddHoldingOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
@@ -152,6 +155,21 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
           loading={metrics.pricesLoading}
         />
       </div>
+
+      {/* Performance chart */}
+      {allHere.length > 0 && (
+        <DrilldownChart
+          holdings={allHere.map((h) => ({
+            tickerSymbol: h.tickerSymbol,
+            exchange: h.exchange,
+            activeShares: h.activeShares,
+            currentValue: Number(h.currentValue),
+          }))}
+          fxRate={fxRate}
+          portfolioCurrency={currency}
+          label={`${folder.name} — Performance`}
+        />
+      )}
 
       {/* Sub-folders */}
       {folder.children.length > 0 && (

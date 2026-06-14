@@ -19,6 +19,7 @@ export function AddFolderDialog({ open, onClose, portfolioId }: AddFolderDialogP
   const router = useRouter()
   const [name, setName] = useState('')
   const [color, setColor] = useState(PRESET_COLORS[0])
+  const [isWatchlist, setIsWatchlist] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -31,7 +32,7 @@ export function AddFolderDialog({ open, onClose, portfolioId }: AddFolderDialogP
     const res = await fetch('/api/folders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ portfolioId, name: name.trim(), color }),
+      body: JSON.stringify({ portfolioId, name: name.trim(), color, isWatchlist }),
     })
 
     if (!res.ok) {
@@ -47,6 +48,7 @@ export function AddFolderDialog({ open, onClose, portfolioId }: AddFolderDialogP
   function handleClose() {
     setName('')
     setColor(PRESET_COLORS[0])
+    setIsWatchlist(false)
     setError('')
     setLoading(false)
     onClose()
@@ -87,6 +89,17 @@ export function AddFolderDialog({ open, onClose, portfolioId }: AddFolderDialogP
             ))}
           </div>
         </div>
+
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={isWatchlist}
+            onChange={(e) => setIsWatchlist(e.target.checked)}
+            className="rounded border"
+          />
+          <span className="text-sm font-medium">Watchlist (Follow)</span>
+          <span className="text-xs text-muted-foreground">— track securities before buying</span>
+        </label>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 

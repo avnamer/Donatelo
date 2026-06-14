@@ -4,14 +4,19 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Modal } from '@/components/ui/modal'
 
+interface FolderOption {
+  id: string
+  name: string
+  isWatchlist: boolean
+}
+
 interface AddHoldingDialogProps {
   open: boolean
   onClose: () => void
-  // Pass folderId + folderName for direct use (from folder page)
-  // OR pass folders list for selection (from home page)
   folderId?: string
   folderName?: string
-  folders?: Array<{ id: string; name: string }>
+  isWatchlistFolder?: boolean
+  folders?: FolderOption[]
 }
 
 const EXCHANGES = [
@@ -26,6 +31,7 @@ export function AddHoldingDialog({
   onClose,
   folderId: propFolderId,
   folderName: propFolderName,
+  isWatchlistFolder,
   folders,
 }: AddHoldingDialogProps) {
   const router = useRouter()
@@ -34,6 +40,7 @@ export function AddHoldingDialog({
   const [exchange, setExchange] = useState<'TASE' | 'NYSE' | 'NASDAQ' | 'OTHER'>('TASE')
   const [name, setName] = useState('')
   const [expenseRatio, setExpenseRatio] = useState('')
+  const [targetFolderId, setTargetFolderId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -43,9 +50,16 @@ export function AddHoldingDialog({
     folders?.find((f) => f.id === selectedFolderId)?.name ??
     ''
 
+  const effectiveIsWatchlist =
+    isWatchlistFolder ??
+    (folders?.find((f) => f.id === selectedFolderId)?.isWatchlist ?? false)
+
+  const nonWatchlistFolders = folders?.filter((f) => !f.isWatchlist) ?? []
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!ticker.trim() || !name.trim() || !effectiveFolderId) return
+    if (effectiveIsWatchlist && !targetFolderId) return
     setLoading(true)
     setError('')
 
@@ -55,9 +69,8 @@ export function AddHoldingDialog({
       exchange,
       name: name.trim(),
     }
-    if (expenseRatio) {
-      body.expenseRatio = parseFloat(expenseRatio) / 100
-    }
+    if (expenseRatio) body.expenseRatio = parseFloat(expenseRatio) / 100
+    if (effectiveIsWatchlist && targetFolderId) body.targetFolderId = targetFolderId
 
     const res = await fetch('/api/holdings', {
       method: 'POST',
@@ -81,6 +94,7 @@ export function AddHoldingDialog({
     setExchange('TASE')
     setName('')
     setExpenseRatio('')
+    setTargetFolderId('')
     setError('')
     setLoading(false)
     onClose()
@@ -91,7 +105,6 @@ export function AddHoldingDialog({
   return (
     <Modal open={open} onClose={handleClose} title="Add Holding" description={description}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Folder selector — only shown when no folderId is pre-set */}
         {!propFolderId && folders && folders.length > 0 && (
           <div>
             <label className="block text-sm font-medium mb-1.5">Folder</label>
@@ -101,7 +114,7 @@ export function AddHoldingDialog({
               className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
               {folders.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
+                <option key={f.id} value={f.id}>{f.name}{f.isWatchlist ? ' 👁' : ''}</option>
               ))}
             </select>
           </div>
@@ -162,6 +175,24 @@ export function AddHoldingDialog({
           />
         </div>
 
+        {effectiveIsWatchlist && (
+          <div>
+            <label className="block text-sm font-medium mb-1.5">
+              Target folder after purchase <span className="text-destructive">*</span>
+            </label>
+            <select
+              value={targetFolderId}
+              onChange={(e) => setTargetFolderId(e.target.value)}
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">— select folder —</option>
+              {nonWatchlistFolders.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         <div className="flex gap-2 justify-end pt-2">
@@ -174,7 +205,13 @@ export function AddHoldingDialog({
           </button>
           <button
             type="submit"
-            disabled={loading || !ticker.trim() || !name.trim() || !effectiveFolderId}
+            disabled={
+              loading ||
+              !ticker.trim() ||
+              !name.trim() ||
+              !effectiveFolderId ||
+              (effectiveIsWatchlist && !targetFolderId)
+            }
             className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {loading ? 'Adding…' : 'Add Holding'}

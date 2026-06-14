@@ -350,7 +350,7 @@ export function HoldingsTree({ holdings, folders, portfolioId, sectionTitle, loa
         <AddHoldingDialog
           open
           onClose={() => setAddHoldingTarget(null)}
-          folders={folders.filter((f) => f.parentId === null).map((f) => ({ id: f.id, name: f.name }))}
+          folders={folders.filter((f) => f.parentId === null).map((f) => ({ id: f.id, name: f.name, isWatchlist: f.isWatchlist ?? false }))}
         />
       )}
       <ConfirmDialog

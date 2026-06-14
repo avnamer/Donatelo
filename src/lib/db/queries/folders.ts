@@ -33,6 +33,7 @@ export async function getFolders(portfolioId: string, userId: string) {
       targetAllocationPct: true,
       sortOrder: true,
       isHiddenWhenShared: true,
+      isWatchlist: true,
       createdAt: true,
     },
   })
@@ -50,6 +51,7 @@ export async function createFolder(
     color?: string
     targetAllocationPct?: number
     sortOrder?: number
+    isWatchlist?: boolean
   }
 ) {
   // Verify portfolio ownership
@@ -69,6 +71,7 @@ export async function createFolder(
         ? new Prisma.Decimal(data.targetAllocationPct)
         : null,
       sortOrder: data.sortOrder ?? 0,
+      isWatchlist: data.isWatchlist ?? false,
     },
   })
 }
@@ -135,6 +138,7 @@ export async function getFolderById(folderId: string, userId: string) {
       targetAllocationPct: true,
       sortOrder: true,
       isHiddenWhenShared: true,
+      isWatchlist: true,
       createdAt: true,
       parent: {
         select: { id: true, name: true, parentId: true },
@@ -146,6 +150,7 @@ export async function getFolderById(folderId: string, userId: string) {
           color: true,
           targetAllocationPct: true,
           parentId: true,
+          isWatchlist: true,
         },
         orderBy: { sortOrder: 'asc' },
       },

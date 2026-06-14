@@ -79,6 +79,7 @@ export async function createHolding(
     name: string
     expenseRatio?: number
     targetAllocationPct?: number
+    targetFolderId?: string
   }
 ) {
   const folder = await prisma.folder.findFirst({
@@ -99,6 +100,7 @@ export async function createHolding(
       targetAllocationPct: data.targetAllocationPct
         ? new Prisma.Decimal(data.targetAllocationPct)
         : null,
+      targetFolderId: data.targetFolderId ?? null,
     },
   })
 }
@@ -273,4 +275,66 @@ export async function deleteLot(lotId: string, userId: string) {
   if (!lot) return null
 
   return prisma.lot.delete({ where: { id: lotId } })
+}
+
+/**
+ * Atomically creates a lot and moves a watchlist holding to its targetFolder.
+ * Also creates a SECURITY_BUY transaction.
+ */
+export async function purchaseWatchlistHolding(
+  holdingId: string,
+  userId: string,
+  data: {
+    purchaseDate: Date
+    shares: number
+    costPerShare: bigint
+    costCurrency: string
+    accountType?: string
+    notes?: string
+  }
+) {
+  const holding = await prisma.holding.findFirst({
+    where: { id: holdingId, folder: { portfolio: { userId } } },
+    select: { id: true, targetFolderId: true, folder: { select: { portfolioId: true } } },
+  })
+  if (!holding) return null
+  if (!holding.targetFolderId) return null
+
+  return prisma.$transaction(async (tx) => {
+    const lot = await tx.lot.create({
+      data: {
+        holdingId,
+        purchaseDate: data.purchaseDate,
+        shares: new Prisma.Decimal(data.shares),
+        costPerShare: data.costPerShare,
+        costCurrency: data.costCurrency,
+        accountType: data.accountType ?? null,
+        notes: data.notes ?? null,
+      },
+    })
+
+    await tx.holding.update({
+      where: { id: holdingId },
+      data: { folderId: holding.targetFolderId!, targetFolderId: null },
+    })
+
+    const totalCost = BigInt(Math.round(data.shares * Number(data.costPerShare)))
+    await tx.transaction.create({
+      data: {
+        portfolioId: holding.folder.portfolioId,
+        userId,
+        type: 'SECURITY_BUY',
+        date: data.purchaseDate,
+        amount: totalCost,
+        currency: data.costCurrency,
+        holdingId,
+        lotId: lot.id,
+        shares: new Prisma.Decimal(data.shares),
+        pricePerShare: data.costPerShare,
+        notes: data.notes ?? null,
+      },
+    })
+
+    return lot
+  })
 }

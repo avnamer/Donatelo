@@ -30,6 +30,7 @@ export default async function MarketStatusPage() {
     exchange: h.exchange,
     folderId: h.folderId,
     expenseRatio: h.expenseRatio ? Number(h.expenseRatio) : null,
+    targetFolderId: h.targetFolderId ?? null,
     folder: {
       name: h.folder.name,
       color: h.folder.color,

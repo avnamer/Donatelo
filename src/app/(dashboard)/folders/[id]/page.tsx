@@ -29,6 +29,7 @@ export default async function FolderPage({ params }: PageProps) {
     exchange: h.exchange,
     folderId: h.folderId,
     expenseRatio: h.expenseRatio ? Number(h.expenseRatio) : null,
+    targetFolderId: h.targetFolderId ?? null,
     folder: {
       name: h.folder.name,
       color: h.folder.color,
@@ -53,6 +54,7 @@ export default async function FolderPage({ params }: PageProps) {
     parentId: folder.parentId,
     name: folder.name,
     color: folder.color,
+    isWatchlist: folder.isWatchlist,
     targetAllocationPct: folder.targetAllocationPct ? Number(folder.targetAllocationPct) : null,
     parent: folder.parent,
     children: folder.children.map((c) => ({

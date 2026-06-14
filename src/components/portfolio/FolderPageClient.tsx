@@ -3,12 +3,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronRight, Plus, Pencil, Trash2, MoreHorizontal } from 'lucide-react'
+import { ChevronRight, Plus, Pencil, Trash2, MoreHorizontal, Eye } from 'lucide-react'
 import { usePortfolioMetrics } from '@/hooks/usePortfolio'
 import { formatCurrency, formatPercent } from '@/lib/calculations'
 import { useUIStore } from '@/store/ui'
 import { cn, formatHoldingDurationLong } from '@/lib/utils'
 import { AddHoldingDialog } from './AddHoldingDialog'
+import { MarkAsPurchasedDialog } from './MarkAsPurchasedDialog'
 import { RenameFolderDialog } from './RenameFolderDialog'
 import { EditHoldingDialog } from './EditHoldingDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -25,6 +26,7 @@ interface SerializedFolder {
   parentId: string | null
   name: string
   color: string | null
+  isWatchlist: boolean
   targetAllocationPct: number | null
   parent: { id: string; name: string; parentId: string | null } | null
   children: Array<{
@@ -55,6 +57,12 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
   const [renameOpen, setRenameOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'folder' } | { type: 'holding'; id: string; ticker: string } | null>(null)
   const [editTarget, setEditTarget] = useState<{ id: string; ticker: string; name: string; folderId: string; expenseRatio: number | null } | null>(null)
+  const [purchaseTarget, setPurchaseTarget] = useState<{
+    holdingId: string
+    tickerSymbol: string
+    exchange: string
+    targetFolderName: string
+  } | null>(null)
 
   // Holdings whose direct folderId is this folder
   const directHoldings = metrics.holdings.filter((h) => h.folderId === folder.id)
@@ -115,6 +123,12 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
             />
           )}
           <h1 className="text-2xl font-bold">{folder.name}</h1>
+          {folder.isWatchlist && (
+            <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              <Eye className="h-3 w-3" />
+              Watchlist
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -354,6 +368,24 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                         onDelete={() => setConfirmDelete({ type: 'holding', id: h.holdingId, ticker: h.tickerSymbol })}
                       />
                     </td>
+                    {folder.isWatchlist && (
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => {
+                            const rawHolding = holdings.find((rh) => rh.id === h.holdingId)
+                            setPurchaseTarget({
+                              holdingId: h.holdingId,
+                              tickerSymbol: h.tickerSymbol,
+                              exchange: h.exchange,
+                              targetFolderName: folders.find((f) => f.id === rawHolding?.targetFolderId)?.name ?? '—',
+                            })
+                          }}
+                          className="rounded-lg bg-primary text-primary-foreground px-3 py-1 text-xs font-medium hover:opacity-90 transition-opacity"
+                        >
+                          Mark as Purchased
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )
               })}
@@ -387,6 +419,16 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
         currentName={folder.name}
         currentColor={folder.color}
       />
+      {purchaseTarget && (
+        <MarkAsPurchasedDialog
+          open={!!purchaseTarget}
+          onClose={() => setPurchaseTarget(null)}
+          holdingId={purchaseTarget.holdingId}
+          tickerSymbol={purchaseTarget.tickerSymbol}
+          exchange={purchaseTarget.exchange}
+          targetFolderName={purchaseTarget.targetFolderName}
+        />
+      )}
       <ConfirmDialog
         open={confirmDelete !== null}
         title={confirmDelete?.type === 'folder' ? 'Delete folder' : 'Remove holding'}

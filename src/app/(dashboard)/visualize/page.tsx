@@ -29,6 +29,7 @@ export default async function VisualizePage() {
     exchange: h.exchange,
     folderId: h.folderId,
     expenseRatio: h.expenseRatio ? Number(h.expenseRatio) : null,
+    targetFolderId: h.targetFolderId ?? null,
     folder: { name: h.folder.name, color: h.folder.color },
     lots: h.lots.map((l) => ({
       ...l,

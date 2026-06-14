@@ -34,11 +34,13 @@ model Folder {
   targetAllocationPct Decimal?  @map("target_allocation_pct") @db.Decimal(5, 2)
   sortOrder           Int       @default(0) @map("sort_order")
   isHiddenWhenShared  Boolean   @default(false) @map("is_hidden_when_shared")
+  isWatchlist         Boolean   @default(false) @map("is_watchlist")
   createdAt           DateTime  @default(now()) @map("created_at")
   parent              Folder?   @relation("FolderTree", fields: [parentId], references: [id])
   children            Folder[]  @relation("FolderTree")
   portfolio           Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
   holdings            Holding[]
+  watchlistSources    Holding[]  @relation("WatchlistTarget")
 
   @@index([portfolioId])
   @@index([parentId])
@@ -54,9 +56,11 @@ model Holding {
   expenseRatio        Decimal?       @map("expense_ratio") @db.Decimal(6, 4)
   targetAllocationPct Decimal?       @map("target_allocation_pct") @db.Decimal(5, 2)
   isActive            Boolean        @default(true) @map("is_active")
+  targetFolderId      String?        @map("target_folder_id")
   createdAt           DateTime       @default(now()) @map("created_at")
   agentInsights       AgentInsight[]
   thesis              HoldingThesis?
+  targetFolder        Folder?        @relation("WatchlistTarget", fields: [targetFolderId], references: [id])
   folder              Folder         @relation(fields: [folderId], references: [id], onDelete: Cascade)
   lots                Lot[]
   transactions        Transaction[]

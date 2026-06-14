@@ -9,6 +9,7 @@ const CreateHoldingSchema = z.object({
   exchange: z.enum(['TASE', 'NYSE', 'NASDAQ', 'OTHER']),
   name: z.string().min(1).max(200),
   expenseRatio: z.number().min(0).max(1).optional(),
+  targetFolderId: z.string().uuid().optional(),
 })
 
 export async function POST(request: NextRequest) {

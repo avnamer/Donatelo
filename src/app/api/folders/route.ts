@@ -8,6 +8,7 @@ const CreateFolderSchema = z.object({
   name: z.string().min(1).max(100),
   parentId: z.string().uuid().nullable().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  isWatchlist: z.boolean().optional(),
 })
 
 export async function POST(request: NextRequest) {

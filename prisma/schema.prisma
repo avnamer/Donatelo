@@ -68,6 +68,7 @@ model Holding {
 
   @@index([folderId])
   @@index([tickerSymbol])
+  @@index([targetFolderId])
   @@map("holdings")
 }
 

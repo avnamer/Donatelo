@@ -301,6 +301,12 @@ export async function purchaseWatchlistHolding(
   if (!holding.targetFolderId) return null
 
   return prisma.$transaction(async (tx) => {
+    const targetFolder = await tx.folder.findFirst({
+      where: { id: holding.targetFolderId!, portfolio: { userId } },
+      select: { id: true },
+    })
+    if (!targetFolder) throw new Error('Target folder not found or not owned by user')
+
     const lot = await tx.lot.create({
       data: {
         holdingId,
@@ -322,7 +328,6 @@ export async function purchaseWatchlistHolding(
     await tx.transaction.create({
       data: {
         portfolioId: holding.folder.portfolioId,
-        userId,
         type: 'SECURITY_BUY',
         date: data.purchaseDate,
         amount: totalCost,

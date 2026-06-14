@@ -282,12 +282,13 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
         <div className="rounded-xl border bg-card overflow-hidden">
           {/* Table header */}
           <div className="px-3 py-2 bg-muted/30 border-b text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            <div className="grid grid-cols-[1fr_120px_130px_80px_40px]">
+            <div className={folder.isWatchlist ? 'grid grid-cols-[1fr_120px_130px_80px_40px_160px]' : 'grid grid-cols-[1fr_120px_130px_80px_40px]'}>
               <span>Name</span>
               <span className="text-right">Value</span>
               <span className="text-right">Gain / Return</span>
               <span className="text-right">Alloc</span>
               <span />
+              {folder.isWatchlist && <span className="text-right">Action</span>}
             </div>
           </div>
           <table className="w-full">
@@ -297,16 +298,18 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
               <col className="w-[130px]" />
               <col className="w-[80px]" />
               <col className="w-[40px]" />
+              {folder.isWatchlist && <col className="w-[160px]" />}
             </colgroup>
             <tbody>
               {directHoldings.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                  <td colSpan={folder.isWatchlist ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">
                     No holdings yet. Click "Add Holding" to get started.
                   </td>
                 </tr>
               )}
               {directHoldings.map((h) => {
+                const rawHolding = holdings.find((rh) => rh.id === h.holdingId)
                 const hPositive = h.unrealizedGains >= 0n
                 const hAlloc = totalValue > 0n ? Number(h.currentValue) / Number(totalValue) * 100 : 0
                 const hTarget = holdingTargets[h.holdingId] ?? 0
@@ -371,8 +374,8 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                     {folder.isWatchlist && (
                       <td className="py-3 px-4 text-right">
                         <button
+                          disabled={!rawHolding?.targetFolderId}
                           onClick={() => {
-                            const rawHolding = holdings.find((rh) => rh.id === h.holdingId)
                             setPurchaseTarget({
                               holdingId: h.holdingId,
                               tickerSymbol: h.tickerSymbol,
@@ -380,7 +383,7 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                               targetFolderName: folders.find((f) => f.id === rawHolding?.targetFolderId)?.name ?? '—',
                             })
                           }}
-                          className="rounded-lg bg-primary text-primary-foreground px-3 py-1 text-xs font-medium hover:opacity-90 transition-opacity"
+                          className="rounded-lg bg-primary text-primary-foreground px-3 py-1 text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Mark as Purchased
                         </button>
@@ -421,7 +424,7 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
       />
       {purchaseTarget && (
         <MarkAsPurchasedDialog
-          open={!!purchaseTarget}
+          open={true}
           onClose={() => setPurchaseTarget(null)}
           holdingId={purchaseTarget.holdingId}
           tickerSymbol={purchaseTarget.tickerSymbol}

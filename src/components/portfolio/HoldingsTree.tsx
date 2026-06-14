@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  MoreHorizontal, Plus, Pencil, Trash2, FolderPlus, ChevronDown, Banknote,
+  MoreHorizontal, Plus, Pencil, Trash2, FolderPlus, ChevronDown, Banknote, Eye,
 } from 'lucide-react'
 import { formatCurrency, formatPercent } from '@/lib/calculations'
 import { useUIStore } from '@/store/ui'
@@ -22,6 +22,7 @@ interface RootFolderGroup {
   folderId: string
   folderName: string
   folderColor: string | null
+  isWatchlist: boolean
   targetPct: number | null
   holdings: HoldingMetrics[]
   totalValue: bigint
@@ -52,6 +53,7 @@ function buildRootFolderGroups(
       folderId: f.id,
       folderName: f.name,
       folderColor: f.color,
+      isWatchlist: f.isWatchlist ?? false,
       targetPct: f.targetAllocationPct ? Number(f.targetAllocationPct) : null,
       holdings: [],
       totalValue: 0n,
@@ -186,7 +188,8 @@ function FolderRow({
             className="w-2.5 h-2.5 rounded-full flex-shrink-0"
             style={{ backgroundColor: group.folderColor ?? 'hsl(var(--muted-foreground))' }}
           />
-          {group.folderName}
+          <span className="font-medium">{group.folderName}</span>
+          {group.isWatchlist && <Eye className="h-3.5 w-3.5 text-muted-foreground ml-1 inline-block" />}
           <span className="text-xs text-muted-foreground font-normal">
             ({group.holdings.length})
           </span>

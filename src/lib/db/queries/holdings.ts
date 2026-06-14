@@ -62,7 +62,7 @@ export async function getHoldingWithLots(holdingId: string, userId: string) {
     },
     include: {
       lots: { orderBy: { purchaseDate: 'asc' } },
-      folder: { select: { id: true, name: true, portfolioId: true } },
+      folder: { select: { id: true, name: true, portfolioId: true, isWatchlist: true } },
     },
   })
 }

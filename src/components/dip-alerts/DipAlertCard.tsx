@@ -54,6 +54,11 @@ export function DipAlertCard({ alert, view, onClick }: DipAlertCardProps) {
         <div>
           <p className="font-semibold text-sm leading-tight">{alert.ticker}</p>
           <p className="text-xs text-muted-foreground truncate max-w-[120px]">{alert.name}</p>
+          {alert.isWatchlist && (
+            <span className="text-[10px] font-medium bg-muted text-muted-foreground rounded px-1.5 py-0.5">
+              Watchlist
+            </span>
+          )}
         </div>
         <span className="shrink-0 inline-flex items-center rounded-full bg-destructive/10 text-destructive text-xs font-semibold px-2 py-0.5">
           -{dropPct}%

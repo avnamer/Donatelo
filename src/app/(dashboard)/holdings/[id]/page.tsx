@@ -41,6 +41,8 @@ export default async function HoldingPage({ params }: Props) {
         folderId: holding.folderId,
         folderName: holding.folder.name,
         portfolioId: holding.folder.portfolioId,
+        isWatchlist: holding.folder.isWatchlist,
+        targetFolderId: holding.targetFolderId ?? null,
       }}
       lots={lots}
       folders={folders}

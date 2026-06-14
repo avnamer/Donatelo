@@ -17,6 +17,7 @@ export interface DipAlertRow {
   priceHistory: Array<{ date: string; price: number }>
   aiSuggestion: string | null
   computedAt: Date
+  isWatchlist: boolean
 }
 
 export async function getDipAlertsForPortfolio(
@@ -25,10 +26,18 @@ export async function getDipAlertsForPortfolio(
   const rows = await prisma.dipAlert.findMany({
     where: { portfolioId },
     orderBy: { dropFrom52w: 'asc' }, // asc = most negative first = biggest drops first
+    include: {
+      holding: {
+        select: {
+          folder: { select: { isWatchlist: true } }
+        }
+      }
+    }
   })
   return rows.map((r) => ({
     ...r,
     priceHistory: r.priceHistory as Array<{ date: string; price: number }>,
+    isWatchlist: r.holding.folder.isWatchlist,
   }))
 }
 

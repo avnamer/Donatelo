@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Pencil, TrendingUp, TrendingDown, Trash2 } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, TrendingUp, TrendingDown, Trash2, Eye } from 'lucide-react'
 import { formatCurrency, formatPercent, calcCostBasis, calcUnrealizedGains, calcUnrealizedReturnPct } from '@/lib/calculations'
 import { usePrices } from '@/hooks/usePrices'
 import { useFxRate } from '@/hooks/useFxRate'
@@ -15,6 +15,7 @@ import { EditLotDialog } from './EditLotDialog'
 import { RecordDividendDialog } from './RecordDividendDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EditHoldingDialog } from './EditHoldingDialog'
+import { MarkAsPurchasedDialog } from './MarkAsPurchasedDialog'
 import { DrilldownChart } from '@/components/charts/DrilldownChart'
 import type { Lot } from '@/types'
 import type { Currency } from '@/types'
@@ -29,6 +30,8 @@ interface HoldingInfo {
   folderId: string
   folderName: string
   portfolioId: string
+  isWatchlist?: boolean
+  targetFolderId?: string | null
 }
 
 interface HoldingDetailProps {
@@ -51,6 +54,7 @@ export function HoldingDetail({ holding, lots, folders = [] }: HoldingDetailProp
   const [addLotOpen, setAddLotOpen] = useState(false)
   const [editHoldingOpen, setEditHoldingOpen] = useState(false)
   const [recordDividendOpen, setRecordDividendOpen] = useState(false)
+  const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [sellTarget, setSellTarget] = useState<Lot | null>(null)
   const [editLotTarget, setEditLotTarget] = useState<Lot | null>(null)
   const [deleteLotTarget, setDeleteLotTarget] = useState<string | null>(null)
@@ -114,55 +118,100 @@ export function HoldingDetail({ holding, lots, folders = [] }: HoldingDetailProp
           <p className="text-muted-foreground mt-0.5">{holding.name}</p>
         </div>
         <div className="flex items-center gap-2">
-          {folders.length > 0 && (
-            <button
-              onClick={() => setEditHoldingOpen(true)}
-              className="rounded-lg border p-2 hover:bg-muted transition-colors"
-              title="Edit holding"
-            >
-              <Pencil className="h-4 w-4 text-muted-foreground" />
-            </button>
+          {holding.isWatchlist ? (
+            <>
+              <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                <Eye className="h-3 w-3" />
+                Watchlist
+              </span>
+              <button
+                onClick={() => setPurchaseOpen(true)}
+                disabled={!holding.targetFolderId}
+                className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                Mark as Purchased
+              </button>
+            </>
+          ) : (
+            <>
+              {folders.length > 0 && (
+                <button
+                  onClick={() => setEditHoldingOpen(true)}
+                  className="rounded-lg border p-2 hover:bg-muted transition-colors"
+                  title="Edit holding"
+                >
+                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
+              <button
+                onClick={() => setRecordDividendOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
+              >
+                Record Dividend
+              </button>
+              <button
+                onClick={() => setAddLotOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                <Plus className="h-4 w-4" />
+                Add Lot
+              </button>
+            </>
           )}
-          <button
-            onClick={() => setRecordDividendOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
-          >
-            Record Dividend
-          </button>
-          <button
-            onClick={() => setAddLotOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="h-4 w-4" />
-            Add Lot
-          </button>
         </div>
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard
-          label="Current Value"
-          value={formatCurrency(currentValue, currency, { compact: true })}
-          usdValue={currentValueUSD !== null ? formatCurrency(currentValueUSD, 'USD', { compact: true }) : undefined}
-        />
-        <StatCard
-          label="Cost Basis"
-          value={formatCurrency(costBasis, currency, { compact: true })}
-          usdValue={costBasisUSD !== null ? formatCurrency(costBasisUSD, 'USD', { compact: true }) : undefined}
-        />
-        <StatCard
-          label="Unrealized P&L"
-          value={formatCurrency(unrealizedGains, currency, { compact: true })}
-          sub={formatPercent(unrealizedReturnPct, 1)}
-          positive={isPositive}
-          usdValue={unrealizedGainsUSD !== null ? formatCurrency(unrealizedGainsUSD, 'USD', { compact: true }) : undefined}
-        />
-        <StatCard label="Shares" value={totalActiveShares.toLocaleString(undefined, { maximumFractionDigits: 4 })} />
-      </div>
+      {holding.isWatchlist ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <StatCard
+            label="Current Price"
+            value={currentPriceDisplay !== undefined
+              ? `${priceCurrency === 'USD' ? '$' : '₪'}${currentPriceDisplay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : '—'
+            }
+          />
+          <StatCard label="Watchlist" value="Not yet purchased" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard
+            label="Current Value"
+            value={formatCurrency(currentValue, currency, { compact: true })}
+            usdValue={currentValueUSD !== null ? formatCurrency(currentValueUSD, 'USD', { compact: true }) : undefined}
+          />
+          <StatCard
+            label="Cost Basis"
+            value={formatCurrency(costBasis, currency, { compact: true })}
+            usdValue={costBasisUSD !== null ? formatCurrency(costBasisUSD, 'USD', { compact: true }) : undefined}
+          />
+          <StatCard
+            label="Unrealized P&L"
+            value={formatCurrency(unrealizedGains, currency, { compact: true })}
+            sub={formatPercent(unrealizedReturnPct, 1)}
+            positive={isPositive}
+            usdValue={unrealizedGainsUSD !== null ? formatCurrency(unrealizedGainsUSD, 'USD', { compact: true }) : undefined}
+          />
+          <StatCard label="Shares" value={totalActiveShares.toLocaleString(undefined, { maximumFractionDigits: 4 })} />
+        </div>
+      )}
 
       {/* Performance chart */}
-      {totalActiveShares > 0 && (
+      {holding.isWatchlist ? (
+        <DrilldownChart
+          holdings={[{
+            tickerSymbol: holding.tickerSymbol,
+            exchange: holding.exchange,
+            activeShares: 1,
+            currentValue: Number(currentPrice),
+            costBasis: Number(currentPrice),
+            earliestPurchaseDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+          }]}
+          fxRate={fxRate}
+          portfolioCurrency={priceCurrency as Currency}
+          label={`${holding.tickerSymbol} — Price History`}
+        />
+      ) : totalActiveShares > 0 ? (
         <DrilldownChart
           holdings={[{
             tickerSymbol: holding.tickerSymbol,
@@ -178,9 +227,10 @@ export function HoldingDetail({ holding, lots, folders = [] }: HoldingDetailProp
           portfolioCurrency={currency}
           label={`${holding.tickerSymbol} — Performance`}
         />
-      )}
+      ) : null}
 
-      {/* Active Lots */}
+      {/* Active Lots & Sold Lots — hidden for watchlist holdings */}
+      {!holding.isWatchlist && (<>
       <section>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
           Active Lots
@@ -315,6 +365,8 @@ export function HoldingDetail({ holding, lots, folders = [] }: HoldingDetailProp
         </section>
       )}
 
+      </>)}
+
       {/* Holding info */}
       {holding.expenseRatio !== null && (
         <p className="text-sm text-muted-foreground">
@@ -371,6 +423,16 @@ export function HoldingDetail({ holding, lots, folders = [] }: HoldingDetailProp
           currentExpenseRatio={holding.expenseRatio}
           currentFolderId={holding.folderId}
           folders={folders}
+        />
+      )}
+      {holding.isWatchlist && holding.targetFolderId && (
+        <MarkAsPurchasedDialog
+          open={purchaseOpen}
+          onClose={() => setPurchaseOpen(false)}
+          holdingId={holding.id}
+          tickerSymbol={holding.tickerSymbol}
+          exchange={holding.exchange}
+          targetFolderName={folders.find((f) => f.id === holding.targetFolderId)?.name ?? '—'}
         />
       )}
     </div>

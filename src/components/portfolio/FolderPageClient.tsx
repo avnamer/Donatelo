@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronRight, Plus, Pencil, Trash2, MoreHorizontal, Eye } from 'lucide-react'
 import { usePortfolioMetrics } from '@/hooks/usePortfolio'
+import { usePrices } from '@/hooks/usePrices'
 import { formatCurrency, formatPercent } from '@/lib/calculations'
 import { useUIStore } from '@/store/ui'
 import { cn, formatHoldingDurationLong } from '@/lib/utils'
@@ -66,6 +67,11 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
 
   // Holdings whose direct folderId is this folder
   const directHoldings = metrics.holdings.filter((h) => h.folderId === folder.id)
+
+  const watchlistTickerKeys = folder.isWatchlist
+    ? directHoldings.map((h) => `${h.tickerSymbol}:${h.exchange === 'TASE' ? 'TASE' : 'US'}`)
+    : []
+  const { data: watchlistPrices = {} } = usePrices(watchlistTickerKeys)
 
   // Holdings in sub-folders of this folder
   const subFolderIds = new Set(folder.children.map((c) => c.id))
@@ -282,11 +288,20 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
         <div className="rounded-xl border bg-card overflow-hidden">
           {/* Table header */}
           <div className="px-3 py-2 bg-muted/30 border-b text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            <div className={folder.isWatchlist ? 'grid grid-cols-[1fr_120px_130px_80px_40px_160px]' : 'grid grid-cols-[1fr_120px_130px_80px_40px]'}>
+            <div className={folder.isWatchlist
+              ? 'grid grid-cols-[1fr_140px_40px_160px]'
+              : 'grid grid-cols-[1fr_120px_130px_80px_40px]'
+            }>
               <span>Name</span>
-              <span className="text-right">Value</span>
-              <span className="text-right">Gain / Return</span>
-              <span className="text-right">Alloc</span>
+              {folder.isWatchlist ? (
+                <span className="text-right">Current Price</span>
+              ) : (
+                <>
+                  <span className="text-right">Value</span>
+                  <span className="text-right">Gain / Return</span>
+                  <span className="text-right">Alloc</span>
+                </>
+              )}
               <span />
               {folder.isWatchlist && <span className="text-right">Action</span>}
             </div>
@@ -294,16 +309,25 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
           <table className="w-full">
             <colgroup>
               <col />
-              <col className="w-[120px]" />
-              <col className="w-[130px]" />
-              <col className="w-[80px]" />
-              <col className="w-[40px]" />
-              {folder.isWatchlist && <col className="w-[160px]" />}
+              {folder.isWatchlist ? (
+                <>
+                  <col className="w-[140px]" />
+                  <col className="w-[40px]" />
+                  <col className="w-[160px]" />
+                </>
+              ) : (
+                <>
+                  <col className="w-[120px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[40px]" />
+                </>
+              )}
             </colgroup>
             <tbody>
               {directHoldings.length === 0 && (
                 <tr>
-                  <td colSpan={folder.isWatchlist ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">
+                  <td colSpan={folder.isWatchlist ? 4 : 5} className="py-8 text-center text-sm text-muted-foreground">
                     No holdings yet. Click "Add Holding" to get started.
                   </td>
                 </tr>
@@ -321,6 +345,14 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                 }, null)
                 const duration       = oldestLot ? formatHoldingDurationLong(oldestLot) : null
 
+                const priceData = folder.isWatchlist
+                  ? watchlistPrices[h.tickerSymbol]
+                  : undefined
+                const currentPriceDisplay = priceData && priceData.price > 0n
+                  ? (Number(priceData.price) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  : '—'
+                const priceCurrencySymbol = priceData?.currency === 'USD' ? '$' : '₪'
+
                 return (
                   <tr key={h.holdingId} className="border-b last:border-0 hover:bg-muted/20 transition-colors group">
                     <td className="py-2 px-3">
@@ -333,61 +365,75 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                         <span className="text-xs text-muted-foreground truncate max-w-[200px]">{h.name}</span>
                       </Link>
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums text-sm">
-                      {formatCurrency(h.currentValue, currency)}
-                    </td>
-                    <td className={cn(
-                      'py-2 px-3 text-right tabular-nums text-sm',
-                      hPositive ? 'text-gain' : 'text-loss'
-                    )}>
-                      <div className="flex flex-col items-end">
-                        <span>{formatCurrency(h.unrealizedGains, currency)}</span>
-                        <span className="text-xs">{formatPercent(h.unrealizedReturnPct, 1)}</span>
-                        {duration && (
-                          <span className="text-xs text-muted-foreground font-normal mt-0.5">
-                            {duration}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2 px-3 text-right tabular-nums text-sm">
-                      <div className="flex flex-col items-end gap-0.5">
-                        <span className="text-muted-foreground">{hAlloc.toFixed(1)}%</span>
-                        {hTarget > 0 && (
-                          <span className="text-[10px] text-muted-foreground/60">
-                            {hTarget.toFixed(1)}% target{' '}
-                            {hGap != null && Math.abs(hGap) >= 0.5 && (
-                              <span className={hGap > 0 ? 'text-gain' : 'text-loss'}>
-                                ({hGap > 0 ? '+' : ''}{hGap.toFixed(1)}%)
+                    {folder.isWatchlist ? (
+                      <>
+                        <td className="py-2 px-3 text-right tabular-nums text-sm">
+                          {priceData ? `${priceCurrencySymbol}${currentPriceDisplay}` : <span className="text-muted-foreground text-xs">Loading…</span>}
+                        </td>
+                        <td className="py-2 px-3">
+                          <HoldingMenu
+                            onEdit={() => setEditTarget({ id: h.holdingId, ticker: h.tickerSymbol, name: h.name, folderId: h.folderId, expenseRatio: h.expenseRatio ?? null })}
+                            onDelete={() => setConfirmDelete({ type: 'holding', id: h.holdingId, ticker: h.tickerSymbol })}
+                          />
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            disabled={!rawHolding?.targetFolderId}
+                            onClick={() => {
+                              setPurchaseTarget({
+                                holdingId: h.holdingId,
+                                tickerSymbol: h.tickerSymbol,
+                                exchange: h.exchange,
+                                targetFolderName: folders.find((f) => f.id === rawHolding?.targetFolderId)?.name ?? '—',
+                              })
+                            }}
+                            className="rounded-lg bg-primary text-primary-foreground px-3 py-1 text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Mark as Purchased
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-2 px-3 text-right tabular-nums text-sm">
+                          {formatCurrency(h.currentValue, currency)}
+                        </td>
+                        <td className={cn(
+                          'py-2 px-3 text-right tabular-nums text-sm',
+                          hPositive ? 'text-gain' : 'text-loss'
+                        )}>
+                          <div className="flex flex-col items-end">
+                            <span>{formatCurrency(h.unrealizedGains, currency)}</span>
+                            <span className="text-xs">{formatPercent(h.unrealizedReturnPct, 1)}</span>
+                            {duration && (
+                              <span className="text-xs text-muted-foreground font-normal mt-0.5">
+                                {duration}
                               </span>
                             )}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2 px-3 w-10">
-                      <HoldingMenu
-                        onEdit={() => setEditTarget({ id: h.holdingId, ticker: h.tickerSymbol, name: h.name, folderId: h.folderId, expenseRatio: h.expenseRatio ?? null })}
-                        onDelete={() => setConfirmDelete({ type: 'holding', id: h.holdingId, ticker: h.tickerSymbol })}
-                      />
-                    </td>
-                    {folder.isWatchlist && (
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          disabled={!rawHolding?.targetFolderId}
-                          onClick={() => {
-                            setPurchaseTarget({
-                              holdingId: h.holdingId,
-                              tickerSymbol: h.tickerSymbol,
-                              exchange: h.exchange,
-                              targetFolderName: folders.find((f) => f.id === rawHolding?.targetFolderId)?.name ?? '—',
-                            })
-                          }}
-                          className="rounded-lg bg-primary text-primary-foreground px-3 py-1 text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          Mark as Purchased
-                        </button>
-                      </td>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums text-sm">
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-muted-foreground">{hAlloc.toFixed(1)}%</span>
+                            {hTarget > 0 && (
+                              <span className="text-[10px] text-muted-foreground/60">
+                                {hTarget.toFixed(1)}% target{' '}
+                                {hGap != null && Math.abs(hGap) >= 0.5 && (
+                                  <span className={hGap > 0 ? 'text-gain' : 'text-loss'}>
+                                    ({hGap > 0 ? '+' : ''}{hGap.toFixed(1)}%)
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 w-10">
+                          <HoldingMenu
+                            onEdit={() => setEditTarget({ id: h.holdingId, ticker: h.tickerSymbol, name: h.name, folderId: h.folderId, expenseRatio: h.expenseRatio ?? null })}
+                            onDelete={() => setConfirmDelete({ type: 'holding', id: h.holdingId, ticker: h.tickerSymbol })}
+                          />
+                        </td>
+                      </>
                     )}
                   </tr>
                 )

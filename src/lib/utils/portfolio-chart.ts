@@ -75,6 +75,7 @@ export function buildIndexedPerformance(
   fxRate: number,
   currency: 'ILS' | 'USD',
   fromDate: Date,
+  skipRebase = false,
 ): PerformancePoint[] {
   const dateSet = new Set<string>()
   for (const points of Object.values(seriesMap)) {
@@ -89,43 +90,73 @@ export function buildIndexedPerformance(
     fillLookup.set(symbol, buildFillForwardLookup(points))
   }
 
-  // Compute V (market value) and cost basis for holdings with price data on iso.
+  // Compute V (market value) and cost basis for the given date.
+  // V  = only holdings that have price data (we can't value what we can't price).
+  // cost = ALL active lots regardless of price availability, so that holdings
+  //        without price data don't inflate the V/cost ratio — their capital
+  //        is still part of the denominator even though their value is unknown.
   function valueAndCost(iso: string): { V: number; cost: number } {
     const date = new Date(iso)
     let V = 0
     let cost = 0
     for (const holding of holdingMetrics) {
       const close = fillLookup.get(holding.tickerSymbol)?.(iso)
-      if (close == null || close <= 0) continue
       for (const lot of holding.lots) {
         const activeShares = lotSharesOnDate(lot, date)
         if (activeShares <= 0) continue
-        const valNative = nativeCents(holding.exchange, activeShares, close)
         const costNative = activeShares * Number(lot.costPerShare)
         if (holding.exchange === 'TASE') {
-          V += toPortfolioCents(valNative, 'ILS', currency, fxRate)
           cost += toPortfolioCents(costNative, 'ILS', currency, fxRate)
         } else {
-          V += toPortfolioCents(valNative, 'USD', currency, fxRate)
           cost += toPortfolioCents(costNative, 'USD', currency, fxRate)
+        }
+        if (close != null && close > 0) {
+          const valNative = nativeCents(holding.exchange, activeShares, close)
+          if (holding.exchange === 'TASE') {
+            V += toPortfolioCents(valNative, 'ILS', currency, fxRate)
+          } else {
+            V += toPortfolioCents(valNative, 'USD', currency, fxRate)
+          }
         }
       }
     }
     return { V, cost }
   }
 
-  const result: PerformancePoint[] = []
-  let baseValue: number | null = null
+  const fromIso = fromDate.toISOString().slice(0, 10)
+  const filteredDates = sortedDates.filter((iso) => iso >= fromIso)
 
-  for (const iso of sortedDates) {
+  const result: PerformancePoint[] = []
+
+  for (const iso of filteredDates) {
     const { V, cost } = valueAndCost(iso)
     if (V <= 0 || cost <= 0) continue
-    // Capture the first valid portfolio market value as the period baseline.
-    // Using V (market value) instead of cost avoids the purchase-price vs
-    // close-price discrepancy on the purchase date when the period extends
-    // before the portfolio started (e.g. selecting 3Y on a 2.5Y portfolio).
-    if (baseValue === null) baseValue = V
-    result.push({ date: new Date(iso), index: 100 * V / baseValue })
+    result.push({ date: new Date(iso), index: 100 * V / cost })
+  }
+
+  // Re-base to 100 at the start of the period only for mid-history ranges.
+  // For inception periods (ALL, or any range clamped to the first lot date)
+  // V(t)/cost(t) × 100 already gives the correct absolute return vs cost.
+  //
+  // Also skip rebase when the first valid data point is far after fromDate
+  // (> 90 days): this means the portfolio had no meaningful price data at the
+  // period start (e.g., early numeric TASE lots with no daily-series history),
+  // so rebasing at that point would produce wildly inflated returns.
+  const firstDate = result.length > 0 ? result[0].date : null
+  const daysFromCutoff = firstDate
+    ? (firstDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000)
+    : 0
+
+  // Also skip rebase when the portfolio was already in loss at period start
+  // (base V/cost < 100): rebasing against a loss baseline produces artificially
+  // inflated "period returns" that don't match the portfolio's actual performance.
+  const baseIndex = result.length > 0 ? result[0].index : 100
+  const effectiveSkipRebase = skipRebase || daysFromCutoff > 90 || baseIndex < 100
+
+  if (!effectiveSkipRebase && result.length > 0) {
+    for (const point of result) {
+      point.index = (point.index / baseIndex) * 100
+    }
   }
 
   return result

@@ -507,6 +507,8 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
           currentExpenseRatio={editTarget.expenseRatio}
           currentFolderId={editTarget.folderId}
           folders={folders}
+          currentDipThreshold={(editTarget as any).dipThreshold ?? null}
+          currentBuyNowThreshold={(editTarget as any).buyNowThreshold ?? null}
         />
       )}
       <RenameFolderDialog

@@ -8,9 +8,10 @@ import { useUIStore } from '@/store/ui'
 import { createBrowserClient } from '@/lib/db/supabase'
 import {
   Home, TrendingUp, BarChart2, PieChart, DollarSign, Activity,
-  ChevronDown, User, LogOut, Sun, Moon, Menu, X, Briefcase, Check
+  ChevronDown, User, LogOut, Sun, Moon, Menu, X, Briefcase, Check, Settings
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
+import { GlobalSettingsModal } from '@/components/settings/GlobalSettingsModal'
 
 interface Portfolio { id: string; name: string }
 
@@ -35,6 +36,7 @@ export function TopNav({
   const router = useRouter()
   const { currency, setCurrency, isOffTarget } = useUIStore()
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [showPortfolioMenu, setShowPortfolioMenu] = useState(false)
   const portfolioMenuRef = useRef<HTMLDivElement>(null)
@@ -176,7 +178,15 @@ export function TopNav({
               {showUserMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowUserMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-40 rounded-lg border bg-card shadow-md z-20 py-1">
+                  <div className="absolute right-0 top-full mt-1 w-44 rounded-lg border bg-card shadow-md z-20 py-1">
+                    <button
+                      onClick={() => { setShowUserMenu(false); setShowSettings(true) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Settings
+                    </button>
+                    <div className="border-t border-border mx-2 my-1" />
                     <button
                       onClick={handleSignOut}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-muted transition-colors"
@@ -277,6 +287,12 @@ export function TopNav({
           </nav>
         </div>
       )}
+
+      <GlobalSettingsModal
+        portfolioId={selectedPortfolioId ?? ''}
+        open={showSettings && !!selectedPortfolioId}
+        onClose={() => setShowSettings(false)}
+      />
     </header>
   )
 }

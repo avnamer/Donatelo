@@ -19,6 +19,7 @@ import {
 import { useUIStore, type TimeRange, type BenchmarkId, BENCHMARK_LABELS } from '@/store/ui'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 
 // ─── Types ────────────────────────────────────
 
@@ -226,7 +227,10 @@ export function PerformanceChart({ data, benchmarkData = [], loading }: Performa
       {/* Header */}
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">Performance</p>
+          <span className="flex items-center gap-1">
+            <p className="text-sm font-medium text-muted-foreground">Performance</p>
+            <InfoTooltip text="ביצועי התיק מחושבים כיחס ערך שוק לעלות (V/cost). הערך הסופי קרוב ל-RETURN אך אינו זהה — ההבדל נובע מרווחים ממומשים ממכירות עבר שנכללים ב-RETURN אך לא בגרף." />
+          </span>
           {data.length > 1 && (
             <p className={cn('text-lg font-bold', isPositive ? 'text-gain' : 'text-loss')}>
               {isPositive ? '+' : ''}

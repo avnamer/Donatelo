@@ -11,13 +11,15 @@ export async function PATCH(
 
   const { id } = await params
   const body = await request.json()
-  const { folderId, name, expenseRatio, plannedAmount } = body
+  const { folderId, name, expenseRatio, plannedAmount, dipThreshold, buyNowThreshold } = body
 
   const result = await updateHolding(id, user.id, {
     ...(folderId !== undefined && { folderId }),
     ...(name !== undefined && { name }),
     ...(expenseRatio !== undefined && { expenseRatio }),
     ...(plannedAmount !== undefined && { plannedAmount: plannedAmount !== null ? BigInt(Math.round(plannedAmount * 100)) : null }),
+    ...(dipThreshold !== undefined && { dipThreshold }),
+    ...(buyNowThreshold !== undefined && { buyNowThreshold }),
   })
   if (!result) return NextResponse.json({ error: 'Not found or unauthorized' }, { status: 404 })
 

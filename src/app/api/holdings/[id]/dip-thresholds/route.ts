@@ -1,7 +1,30 @@
-// PATCH /api/holdings/[id]/dip-thresholds
+// GET+PATCH /api/holdings/[id]/dip-thresholds
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/db/supabase-server'
 import { prisma } from '@/lib/db/prisma'
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  const rows = await prisma.$queryRaw<Array<{ dip_threshold: number | null; buy_now_threshold: number | null }>>`
+    SELECT h.dip_threshold, h.buy_now_threshold
+    FROM holdings h
+    JOIN folders f ON f.id = h.folder_id
+    JOIN portfolios p ON p.id = f.portfolio_id
+    WHERE h.id = ${id} AND p.user_id = ${user.id}
+  `
+  if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  return NextResponse.json({
+    dipThreshold: rows[0].dip_threshold,
+    buyNowThreshold: rows[0].buy_now_threshold,
+  })
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -29,10 +52,11 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid thresholds' }, { status: 400 })
   }
 
-  await prisma.holding.update({
-    where: { id },
-    data: { dipThreshold, buyNowThreshold },
-  })
+  await prisma.$executeRaw`
+    UPDATE holdings
+    SET dip_threshold = ${dipThreshold}, buy_now_threshold = ${buyNowThreshold}
+    WHERE id = ${id}
+  `
 
   return NextResponse.json({ ok: true })
 }

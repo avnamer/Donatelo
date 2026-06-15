@@ -33,6 +33,8 @@ interface HoldingInfo {
   isWatchlist?: boolean
   targetFolderId?: string | null
   plannedAmount?: number | null
+  dipThreshold?: number | null
+  buyNowThreshold?: number | null
 }
 
 interface HoldingDetailProps {
@@ -424,6 +426,8 @@ export function HoldingDetail({ holding, lots, folders = [] }: HoldingDetailProp
           currentExpenseRatio={holding.expenseRatio}
           currentFolderId={holding.folderId}
           folders={folders}
+          currentDipThreshold={holding.dipThreshold ?? null}
+          currentBuyNowThreshold={holding.buyNowThreshold ?? null}
         />
       )}
       {holding.isWatchlist && holding.targetFolderId && (

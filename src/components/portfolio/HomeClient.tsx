@@ -7,6 +7,7 @@ import { refreshPrices } from '@/hooks/usePrices'
 import { useDailySeries } from '@/hooks/useDailySeries'
 import { useFxRate } from '@/hooks/useFxRate'
 import { buildIndexedPerformance } from '@/lib/utils/portfolio-chart'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { HoldingsTree } from './HoldingsTree'
 import { StalePricesBanner } from './StalePricesBanner'
 import { UnavailablePricesPanel } from './UnavailablePricesPanel'
@@ -178,6 +179,7 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
             value={returnPct}
             positive={isPositive}
             loading={metrics.pricesLoading}
+            tooltip="תשואה כוללת: (רווח לא ממומש + רווח ממומש) ÷ סך הון שנפרס. כולל גם פוזיציות שנמכרו בעבר — לכן עשוי להיות שונה במעט מ-Performance בגרף."
           />
           <KpiRow
             label="GAIN"
@@ -255,18 +257,22 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
 // ─── KPI Row ──────────────────────────────────
 
 function KpiRow({
-  label, value, positive, loading,
+  label, value, positive, loading, tooltip,
 }: {
   label: string
   value: string
   positive?: boolean
   loading: boolean
+  tooltip?: string
 }) {
   return (
     <div className="py-2 lg:py-3 border rounded-lg lg:rounded-none lg:border-0 lg:border-b last:border-0 px-3 lg:px-0 bg-card lg:bg-transparent">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">
-        {label}
-      </p>
+      <span className="flex items-center gap-1 mb-0.5">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          {label}
+        </p>
+        {tooltip && <InfoTooltip text={tooltip} />}
+      </span>
       {loading ? (
         <div className="h-6 lg:h-7 w-20 animate-pulse rounded bg-muted" />
       ) : (

@@ -118,6 +118,8 @@ export async function updateHolding(
     isActive?: boolean
     folderId?: string
     plannedAmount?: bigint | null
+    dipThreshold?: number | null
+    buyNowThreshold?: number | null
   }
 ) {
   const holding = await prisma.holding.findFirst({

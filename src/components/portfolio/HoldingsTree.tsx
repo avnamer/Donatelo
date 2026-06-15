@@ -28,6 +28,7 @@ interface RootFolderGroup {
   totalValue: bigint
   totalUnrealizedGains: bigint
   allocationPct: number
+  totalPlannedAmount: number
 }
 
 interface HoldingsTreeProps {
@@ -37,13 +38,15 @@ interface HoldingsTreeProps {
   sectionTitle?: string
   loading?: boolean
   onFolderHover?: (id: string | null) => void
+  watchlistPlannedTotals?: Record<string, number>
 }
 
 // ─── Build root-folder groups ─────────────────
 
 function buildRootFolderGroups(
   holdings: HoldingMetrics[],
-  folders: FolderRow[]
+  folders: FolderRow[],
+  watchlistPlannedTotals: Record<string, number> = {}
 ): RootFolderGroup[] {
   const rootFolders = folders.filter((f) => f.parentId === null)
 
@@ -59,6 +62,7 @@ function buildRootFolderGroups(
       totalValue: 0n,
       totalUnrealizedGains: 0n,
       allocationPct: 0,
+      totalPlannedAmount: watchlistPlannedTotals[f.id] ?? 0,
     })
   }
 
@@ -72,7 +76,18 @@ function buildRootFolderGroups(
     }
   }
 
-  return Array.from(map.values())
+  const groups = Array.from(map.values())
+
+  const isArchive = (g: RootFolderGroup) =>
+    /archive|ארכיב|ארכיון/i.test(g.folderName)
+
+  const rank = (g: RootFolderGroup) => {
+    if (isArchive(g)) return 2
+    if (g.isWatchlist) return 1
+    return 0
+  }
+
+  return groups.sort((a, b) => rank(a) - rank(b))
 }
 
 // ─── Dropdown Menu ────────────────────────────
@@ -86,7 +101,9 @@ interface DropdownItem {
 
 function DropdownMenu({ items, trigger }: { items: DropdownItem[]; trigger?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
+  const [openUpward, setOpenUpward] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -97,10 +114,20 @@ function DropdownMenu({ items, trigger }: { items: DropdownItem[]; trigger?: Rea
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  function handleToggle() {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      setOpenUpward(spaceBelow < 160)
+    }
+    setOpen((v) => !v)
+  }
+
   return (
     <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={buttonRef}
+        onClick={handleToggle}
         className={cn(
           'rounded p-1 hover:bg-muted transition-colors',
           trigger ? 'flex items-center gap-1 text-sm px-2 py-1.5' : 'opacity-0 group-hover:opacity-100'
@@ -110,7 +137,10 @@ function DropdownMenu({ items, trigger }: { items: DropdownItem[]; trigger?: Rea
         {trigger ?? <MoreHorizontal className="h-4 w-4 text-muted-foreground" />}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 rounded-lg border bg-card shadow-lg z-30 py-1">
+        <div className={cn(
+          "absolute right-0 w-44 rounded-lg border bg-card shadow-lg z-30 py-1",
+          openUpward ? "bottom-full mb-1" : "top-full mt-1"
+        )}>
           {items.map((item) => (
             <button
               key={item.label}
@@ -193,10 +223,19 @@ function FolderRow({
           <span className="text-xs text-muted-foreground font-normal">
             ({group.holdings.length})
           </span>
+          {group.isWatchlist && group.totalPlannedAmount > 0 && (
+            <span className="text-xs text-muted-foreground font-normal ml-1">
+              (₪{group.totalPlannedAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })})
+            </span>
+          )}
         </div>
       </td>
-      <td className="py-2.5 px-3 text-right tabular-nums text-sm font-semibold">
-        {formatCurrency(group.totalValue, currency, { compact: true })}
+      <td className="py-2.5 px-3 text-right tabular-nums text-sm font-semibold text-muted-foreground">
+        {group.isWatchlist
+          ? group.totalPlannedAmount > 0
+            ? `(₪${group.totalPlannedAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })})`
+            : '—'
+          : formatCurrency(group.totalValue, currency, { compact: true })}
       </td>
       <td className={cn(
         'hidden sm:table-cell py-2.5 px-3 text-right tabular-nums text-sm font-medium',
@@ -224,7 +263,7 @@ function FolderRow({
 
 // ─── Main Component ───────────────────────────
 
-export function HoldingsTree({ holdings, folders, portfolioId, sectionTitle, loading, onFolderHover }: HoldingsTreeProps) {
+export function HoldingsTree({ holdings, folders, portfolioId, sectionTitle, loading, onFolderHover, watchlistPlannedTotals }: HoldingsTreeProps) {
   const router = useRouter()
   const currency = useUIStore((s) => s.currency)
 
@@ -235,7 +274,7 @@ export function HoldingsTree({ holdings, folders, portfolioId, sectionTitle, loa
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<RootFolderGroup | null>(null)
 
   const deleteFolder = useDeleteFolder(router)
-  const groups = buildRootFolderGroups(holdings, folders)
+  const groups = buildRootFolderGroups(holdings, folders, watchlistPlannedTotals)
 
   const addMenuItems: DropdownItem[] = [
     {

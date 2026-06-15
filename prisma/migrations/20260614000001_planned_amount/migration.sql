@@ -1,0 +1,1 @@
+ALTER TABLE holdings ADD COLUMN IF NOT EXISTS planned_amount BIGINT;

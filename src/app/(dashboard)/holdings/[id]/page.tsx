@@ -43,6 +43,7 @@ export default async function HoldingPage({ params }: Props) {
         portfolioId: holding.folder.portfolioId,
         isWatchlist: holding.folder.isWatchlist,
         targetFolderId: holding.targetFolderId ?? null,
+        plannedAmount: holding.plannedAmount != null ? Number(holding.plannedAmount) / 100 : null,
       }}
       lots={lots}
       folders={folders}

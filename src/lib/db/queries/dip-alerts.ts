@@ -16,8 +16,12 @@ export interface DipAlertRow {
   dropFrom90d: number
   priceHistory: Array<{ date: string; price: number }>
   aiSuggestion: string | null
+  dipTriggered: boolean
+  buyNowTriggered: boolean
   computedAt: Date
   isWatchlist: boolean
+  dipThreshold: number | null
+  buyNowThreshold: number | null
 }
 
 export async function getDipAlertsForPortfolio(
@@ -29,6 +33,8 @@ export async function getDipAlertsForPortfolio(
     include: {
       holding: {
         select: {
+          dipThreshold: true,
+          buyNowThreshold: true,
           folder: { select: { isWatchlist: true } }
         }
       }
@@ -38,6 +44,8 @@ export async function getDipAlertsForPortfolio(
     ...r,
     priceHistory: r.priceHistory as Array<{ date: string; price: number }>,
     isWatchlist: r.holding.folder.isWatchlist,
+    dipThreshold: r.holding.dipThreshold,
+    buyNowThreshold: r.holding.buyNowThreshold,
   }))
 }
 
@@ -52,8 +60,10 @@ export async function getLatestDipAlertAge(
   return row?.computedAt ?? null
 }
 
+export type DipAlertInsert = Omit<DipAlertRow, 'id' | 'isWatchlist' | 'dipThreshold' | 'buyNowThreshold'>
+
 export async function upsertDipAlerts(
-  alerts: Omit<DipAlertRow, 'id'>[]
+  alerts: DipAlertInsert[]
 ): Promise<void> {
   if (alerts.length === 0) return
   await Promise.all(
@@ -78,6 +88,8 @@ export async function upsertDipAlerts(
           dropFrom90d: a.dropFrom90d,
           priceHistory: a.priceHistory as any,
           aiSuggestion: a.aiSuggestion,
+          dipTriggered: a.dipTriggered,
+          buyNowTriggered: a.buyNowTriggered,
           computedAt: a.computedAt,
         },
       })

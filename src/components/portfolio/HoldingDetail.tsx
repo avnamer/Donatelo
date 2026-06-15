@@ -32,6 +32,7 @@ interface HoldingInfo {
   portfolioId: string
   isWatchlist?: boolean
   targetFolderId?: string | null
+  plannedAmount?: number | null
 }
 
 interface HoldingDetailProps {

@@ -220,11 +220,15 @@ function formatPrice(price: number, currency: string) {
 
 function CustomTooltip({ active, payload, label }: TooltipProps) {
   if (!active || !payload?.length) return null
-  const point = payload.find((p) => p.dataKey === 'index')
+  const point = payload[0]
   if (!point) return null
-  const change = point.value - 100
-  const price = point.payload.price as number | undefined
-  const currency = point.payload.currency as string | undefined
+
+  const rawPayload = point.payload as Record<string, unknown>
+  const price = rawPayload.price as number | undefined
+  const currency = rawPayload.currency as string | undefined
+  const index = rawPayload.index as number | undefined
+
+  const change = index !== undefined ? index - 100 : undefined
 
   return (
     <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-sm min-w-[140px]">
@@ -234,12 +238,14 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
           {formatPrice(price, currency)}
         </p>
       )}
-      <p
-        className="text-xs font-semibold tabular-nums"
-        style={{ color: point.color }}
-      >
-        {change >= 0 ? '+' : ''}{change.toFixed(2)}%
-      </p>
+      {change !== undefined && (
+        <p
+          className="text-xs font-semibold tabular-nums"
+          style={{ color: point.color }}
+        >
+          {change >= 0 ? '+' : ''}{change.toFixed(2)}%
+        </p>
+      )}
     </div>
   )
 }
@@ -283,6 +289,9 @@ export function DrilldownChart({
       return entry
     })
   }, [seriesData, loading, holdings, fxRate, portfolioCurrency])
+
+  const isSingleHolding = holdings.length === 1
+  const currency = chartData[0]?.currency
 
   const lastIndex = chartData[chartData.length - 1]?.index ?? 100
   const isPositive = lastIndex >= 100
@@ -364,11 +373,15 @@ export function DrilldownChart({
               tickLine={false}
               axisLine={false}
               domain={['auto', 'auto']}
+              tickFormatter={isSingleHolding && currency
+                ? (v: number) => currency === 'ILS' ? `₪${v.toLocaleString()}` : `$${v.toLocaleString()}`
+                : undefined
+              }
             />
             <Tooltip content={<CustomTooltip />} />
             <Area
               type="monotone"
-              dataKey="index"
+              dataKey={isSingleHolding && currency ? 'price' : 'index'}
               stroke={strokeColor}
               strokeWidth={2.5}
               fill={`url(#${fillId})`}
@@ -380,7 +393,7 @@ export function DrilldownChart({
         </ResponsiveContainer>
       )}
 
-      {chartData.length >= 2 && (
+      {chartData.length >= 2 && !isSingleHolding && (
         <p className="text-xs text-muted-foreground mt-1 text-center">
           Indexed to 100 at start of period
         </p>

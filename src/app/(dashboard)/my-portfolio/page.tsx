@@ -31,6 +31,7 @@ export default async function MarketStatusPage() {
     folderId: h.folderId,
     expenseRatio: h.expenseRatio ? Number(h.expenseRatio) : null,
     targetFolderId: h.targetFolderId ?? null,
+    plannedAmount: h.plannedAmount != null ? Number(h.plannedAmount) / 100 : null,
     folder: {
       name: h.folder.name,
       color: h.folder.color,

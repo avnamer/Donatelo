@@ -79,6 +79,7 @@ export interface ServerHolding {
   folderId: string
   expenseRatio: number | null
   targetFolderId: string | null
+  plannedAmount: number | null
   folder: {
     name: string
     color: string | null

@@ -117,6 +117,7 @@ export async function updateHolding(
     targetAllocationPct?: number | null
     isActive?: boolean
     folderId?: string
+    plannedAmount?: bigint | null
   }
 ) {
   const holding = await prisma.holding.findFirst({

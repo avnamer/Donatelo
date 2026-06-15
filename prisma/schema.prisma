@@ -12,10 +12,12 @@ model Portfolio {
   id            String         @id @default(uuid())
   userId        String         @map("user_id")
   name          String
-  baseCurrency  String         @default("ILS") @map("base_currency")
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  agentInsights AgentInsight[]
+  baseCurrency          String         @default("ILS") @map("base_currency")
+  globalDipThreshold    Float          @default(0.10) @map("global_dip_threshold")
+  globalBuyNowThreshold Float          @default(0.20) @map("global_buy_now_threshold")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+  agentInsights         AgentInsight[]
   cashAccounts  CashAccount[]
   folders       Folder[]
   transactions  Transaction[]
@@ -57,6 +59,9 @@ model Holding {
   targetAllocationPct Decimal?       @map("target_allocation_pct") @db.Decimal(5, 2)
   isActive            Boolean        @default(true) @map("is_active")
   targetFolderId      String?        @map("target_folder_id")
+  plannedAmount       BigInt?        @map("planned_amount")
+  dipThreshold        Float?         @map("dip_threshold")
+  buyNowThreshold     Float?         @map("buy_now_threshold")
   createdAt           DateTime       @default(now()) @map("created_at")
   agentInsights       AgentInsight[]
   thesis              HoldingThesis?
@@ -225,6 +230,22 @@ model AgentInsight {
   @@map("agent_insights")
 }
 
+model CsvImportRule {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  pattern         Json
+  transactionType String   @map("transaction_type")
+  ticker          String?
+  exchange        String?
+  cashAccountName String?  @map("cash_account_name")
+  toCashAccountName String? @map("to_cash_account_name")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("csv_import_rules")
+}
+
 model DipAlert {
   id           String   @id @default(cuid())
   userId       String   @map("user_id")
@@ -240,8 +261,10 @@ model DipAlert {
   dropFromATH  Float?   @map("drop_from_ath")
   dropFrom90d  Float    @map("drop_from_90d")
   priceHistory Json     @map("price_history")
-  aiSuggestion String?  @map("ai_suggestion")
-  computedAt   DateTime @map("computed_at")
+  aiSuggestion    String?  @map("ai_suggestion")
+  dipTriggered    Boolean  @default(true) @map("dip_triggered")
+  buyNowTriggered Boolean  @default(false) @map("buy_now_triggered")
+  computedAt      DateTime @map("computed_at")
 
   holding   Holding   @relation(fields: [holdingId], references: [id], onDelete: Cascade)
   portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronRight, Plus, Pencil, Trash2, MoreHorizontal, Eye } from 'lucide-react'
@@ -58,12 +58,24 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
   const [renameOpen, setRenameOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'folder' } | { type: 'holding'; id: string; ticker: string } | null>(null)
   const [editTarget, setEditTarget] = useState<{ id: string; ticker: string; name: string; folderId: string; expenseRatio: number | null } | null>(null)
+  const [plannedAmounts, setPlannedAmounts] = useState<Record<string, string>>({})
   const [purchaseTarget, setPurchaseTarget] = useState<{
     holdingId: string
     tickerSymbol: string
     exchange: string
     targetFolderName: string
   } | null>(null)
+
+  const savePlannedAmount = useCallback(async (holdingId: string, value: string) => {
+    const num = value === '' ? null : parseFloat(value)
+    if (num !== null && isNaN(num)) return
+    await fetch(`/api/holdings/${holdingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plannedAmount: num }),
+    })
+    router.refresh()
+  }, [router])
 
   // Holdings whose direct folderId is this folder
   const directHoldings = metrics.holdings.filter((h) => h.folderId === folder.id)
@@ -289,12 +301,15 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
           {/* Table header */}
           <div className="px-3 py-2 bg-muted/30 border-b text-xs font-medium text-muted-foreground uppercase tracking-wide">
             <div className={folder.isWatchlist
-              ? 'grid grid-cols-[1fr_140px_40px_160px]'
+              ? 'grid grid-cols-[1fr_140px_120px_40px_160px]'
               : 'grid grid-cols-[1fr_120px_130px_80px_40px]'
             }>
               <span>Name</span>
               {folder.isWatchlist ? (
-                <span className="text-right">Current Price</span>
+                <>
+                  <span className="text-right">Current Price</span>
+                  <span className="text-right">Planned (₪)</span>
+                </>
               ) : (
                 <>
                   <span className="text-right">Value</span>
@@ -312,6 +327,7 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
               {folder.isWatchlist ? (
                 <>
                   <col className="w-[140px]" />
+                  <col className="w-[120px]" />
                   <col className="w-[40px]" />
                   <col className="w-[160px]" />
                 </>
@@ -327,7 +343,7 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
             <tbody>
               {directHoldings.length === 0 && (
                 <tr>
-                  <td colSpan={folder.isWatchlist ? 4 : 5} className="py-8 text-center text-sm text-muted-foreground">
+                  <td colSpan={folder.isWatchlist ? 5 : 5} className="py-8 text-center text-sm text-muted-foreground">
                     No holdings yet. Click "Add Holding" to get started.
                   </td>
                 </tr>
@@ -369,6 +385,18 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                       <>
                         <td className="py-2 px-3 text-right tabular-nums text-sm">
                           {priceData ? `${priceCurrencySymbol}${currentPriceDisplay}` : <span className="text-muted-foreground text-xs">Loading…</span>}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="100"
+                            placeholder="—"
+                            value={plannedAmounts[h.holdingId] ?? (rawHolding?.plannedAmount != null ? String(rawHolding.plannedAmount) : '')}
+                            onChange={(e) => setPlannedAmounts((prev) => ({ ...prev, [h.holdingId]: e.target.value }))}
+                            onBlur={(e) => savePlannedAmount(h.holdingId, e.target.value)}
+                            className="w-full text-right tabular-nums text-sm bg-transparent border-0 border-b border-dashed border-muted-foreground/40 focus:outline-none focus:border-primary py-0.5 px-0"
+                          />
                         </td>
                         <td className="py-2 px-3">
                           <HoldingMenu
@@ -438,6 +466,26 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
                   </tr>
                 )
               })}
+              {folder.isWatchlist && directHoldings.length > 0 && (() => {
+                const total = directHoldings.reduce((sum, h) => {
+                  const raw = holdings.find((rh) => rh.id === h.holdingId)
+                  const val = plannedAmounts[h.holdingId] !== undefined
+                    ? parseFloat(plannedAmounts[h.holdingId] || '0')
+                    : (raw?.plannedAmount ?? 0)
+                  return sum + (isNaN(val) ? 0 : val)
+                }, 0)
+                return (
+                  <tr className="border-t bg-muted/20">
+                    <td className="py-2 px-3 text-sm font-semibold text-muted-foreground" colSpan={2}>
+                      Total planned investment
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums text-sm font-semibold">
+                      ₪{total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                )
+              })()}
             </tbody>
           </table>
         </div>
@@ -502,7 +550,9 @@ export function FolderPageClient({ folder, holdings, folders, holdingTargets = {
 
 function HoldingMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false)
+  const [openUpward, setOpenUpward] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -513,17 +563,29 @@ function HoldingMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () =>
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  function handleToggle() {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      setOpenUpward(window.innerHeight - rect.bottom < 100)
+    }
+    setOpen((v) => !v)
+  }
+
   return (
     <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={buttonRef}
+        onClick={handleToggle}
         className="rounded p-1 opacity-0 group-hover:opacity-100 hover:bg-muted transition-colors"
         aria-label="Actions"
       >
         <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-40 rounded-lg border bg-card shadow-lg z-30 py-1">
+        <div className={cn(
+          "absolute right-0 w-40 rounded-lg border bg-card shadow-lg z-30 py-1",
+          openUpward ? "bottom-full mb-1" : "top-full mt-1"
+        )}>
           <button
             onClick={() => { onEdit(); setOpen(false) }}
             className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors"

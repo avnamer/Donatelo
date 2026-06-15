@@ -134,6 +134,9 @@ export function TopNav({
               <Link href="/import" className="text-muted-foreground hover:text-foreground transition-colors">
                 Import
               </Link>
+              <Link href="/import/csv" className="text-muted-foreground hover:text-foreground transition-colors">
+                Import CSV
+              </Link>
               <Link href="/export" className="text-muted-foreground hover:text-foreground transition-colors">
                 Export
               </Link>
@@ -256,6 +259,9 @@ export function TopNav({
               </Link>
               <Link href="/import" className="flex items-center gap-3 px-5 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted">
                 Import
+              </Link>
+              <Link href="/import/csv" className="flex items-center gap-3 px-5 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted">
+                Import CSV
               </Link>
               <Link href="/export" className="flex items-center gap-3 px-5 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted">
                 Export

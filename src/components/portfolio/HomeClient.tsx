@@ -130,6 +130,17 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
     }))
   }, [metrics, folders])
 
+  const watchlistPlannedTotals = useMemo(() => {
+    const totals: Record<string, number> = {}
+    for (const h of holdings) {
+      if (h.plannedAmount != null) {
+        const rootFolderId = h.folder.parentId ?? h.folderId
+        totals[rootFolderId] = (totals[rootFolderId] ?? 0) + h.plannedAmount
+      }
+    }
+    return totals
+  }, [holdings])
+
   const returnPct = formatPercent(metrics.totalReturnPct, 2)
   const isPositive = metrics.totalReturnPct >= 0
 
@@ -216,6 +227,7 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
             sectionTitle={portfolioName}
             loading={metrics.pricesLoading}
             onFolderHover={setHoveredFolderId}
+            watchlistPlannedTotals={watchlistPlannedTotals}
           />
         </div>
 

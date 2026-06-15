@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import type { DipAlertRow } from '@/lib/db/queries/dip-alerts'
 import type { PeakView } from './DipAlertsSection'
+import { StockThresholdEditor } from './StockThresholdEditor'
 
 const VIEW_HIGH_LABEL: Record<PeakView, string> = {
   '52w': '52w high',
@@ -14,11 +15,22 @@ const VIEW_HIGH_LABEL: Record<PeakView, string> = {
 interface DipAlertCardProps {
   alert: DipAlertRow
   view: PeakView
+  variant: 'dip' | 'buy-now'
+  globalDipThreshold: number
+  globalBuyNowThreshold: number
   onClick: () => void
+  onThresholdSaved: () => void
 }
 
-export function DipAlertCard({ alert, view, onClick }: DipAlertCardProps) {
-  // Filter sparkline data to match the selected time window
+export function DipAlertCard({
+  alert,
+  view,
+  variant,
+  globalDipThreshold,
+  globalBuyNowThreshold,
+  onClick,
+  onThresholdSaved,
+}: DipAlertCardProps) {
   const chartData = useMemo(() => {
     if (view === '90d') {
       const cutoff = new Date()
@@ -26,7 +38,7 @@ export function DipAlertCard({ alert, view, onClick }: DipAlertCardProps) {
       const cutoffStr = cutoff.toISOString().split('T')[0]
       return alert.priceHistory.filter((p) => p.date >= cutoffStr)
     }
-    return alert.priceHistory // 52w or Historical — full stored history
+    return alert.priceHistory
   }, [alert.priceHistory, view])
 
   const peakMap: Record<PeakView, number | null> = {
@@ -44,14 +56,22 @@ export function DipAlertCard({ alert, view, onClick }: DipAlertCardProps) {
   const selectedDrop = dropMap[view] ?? alert.dropFrom52w
   const dropPct = (Math.abs(selectedDrop) * 100).toFixed(1)
 
+  const isBuyNow = variant === 'buy-now'
+  const hasCustomThreshold = alert.dipThreshold != null || alert.buyNowThreshold != null
+
   return (
     <div
-      className="min-w-[220px] max-w-[240px] rounded-xl border border-border bg-card p-4 flex flex-col gap-3 cursor-pointer hover:border-destructive/50 hover:shadow-md transition-all"
+      className={[
+        'min-w-[220px] max-w-[240px] rounded-xl border bg-card p-4 flex flex-col gap-3 cursor-pointer transition-all',
+        isBuyNow
+          ? 'border-orange-500/30 hover:border-orange-500/60 hover:shadow-md'
+          : 'border-border hover:border-destructive/50 hover:shadow-md',
+      ].join(' ')}
       onClick={onClick}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <p className="font-semibold text-sm leading-tight">{alert.ticker}</p>
           <p className="text-xs text-muted-foreground truncate max-w-[120px]">{alert.name}</p>
           {alert.isWatchlist && (
@@ -60,18 +80,39 @@ export function DipAlertCard({ alert, view, onClick }: DipAlertCardProps) {
             </span>
           )}
         </div>
-        <span className="shrink-0 inline-flex items-center rounded-full bg-destructive/10 text-destructive text-xs font-semibold px-2 py-0.5">
-          -{dropPct}%
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={[
+            'inline-flex items-center rounded-full text-xs font-semibold px-2 py-0.5',
+            isBuyNow
+              ? 'bg-orange-500/10 text-orange-500'
+              : 'bg-destructive/10 text-destructive',
+          ].join(' ')}>
+            -{dropPct}%
+          </span>
+          <StockThresholdEditor
+            holdingId={alert.holdingId}
+            ticker={alert.ticker}
+            dipThreshold={alert.dipThreshold}
+            buyNowThreshold={alert.buyNowThreshold}
+            globalDipThreshold={globalDipThreshold}
+            globalBuyNowThreshold={globalBuyNowThreshold}
+            onSaved={onThresholdSaved}
+          />
+        </div>
       </div>
 
-      {/* Prices — label updates with global view */}
+      {/* Custom threshold indicator */}
+      {hasCustomThreshold && (
+        <span className="text-[10px] text-primary font-medium">Custom thresholds</span>
+      )}
+
+      {/* Prices */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>Current <span className="text-foreground font-medium">{alert.currentPrice.toFixed(2)}</span></span>
         <span>{VIEW_HIGH_LABEL[view]} <span className="text-foreground font-medium">{selectedPeak.toFixed(2)}</span></span>
       </div>
 
-      {/* Sparkline — filtered to selected time window */}
+      {/* Sparkline */}
       {chartData.length > 1 && (
         <div className="h-12">
           <ResponsiveContainer width="100%" height="100%">
@@ -79,7 +120,7 @@ export function DipAlertCard({ alert, view, onClick }: DipAlertCardProps) {
               <Line
                 type="monotone"
                 dataKey="price"
-                stroke="#ef4444"
+                stroke={isBuyNow ? '#f97316' : '#ef4444'}
                 strokeWidth={1.5}
                 dot={false}
               />

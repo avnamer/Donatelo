@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getCurrentUser } from '@/lib/db/supabase-server'
 import { prisma } from '@/lib/db/prisma'
+import { fetchUSPriceHistory } from '@/lib/api/polygon'
 
 const VALID_PERIODS = ['30d', '90d', '6m', 'ytd', '1y', '3y'] as const
 type SeriesPeriod = (typeof VALID_PERIODS)[number]
@@ -64,6 +65,54 @@ export async function GET(request: NextRequest) {
     const [symbol, exchange = 'US'] = t.trim().split(':')
     return { symbol: symbol.toUpperCase(), exchange: exchange.toUpperCase() }
   })
+
+  // For US stocks, backfill Polygon history if our cache doesn't go back far enough.
+  // This runs once per symbol and stores results in price_cache for future use.
+  const usSymbols = symbolList.filter(
+    (s) => s.exchange !== 'TASE' && !/^\d+$/.test(s.symbol)
+  )
+  if (usSymbols.length > 0) {
+    // Find the earliest cached date per US symbol
+    const earliestRows = await prisma.priceCache.groupBy({
+      by: ['tickerSymbol'],
+      where: { tickerSymbol: { in: usSymbols.map((s) => s.symbol) } },
+      _min: { priceDate: true },
+    })
+    const earliestBySymbol = new Map(
+      earliestRows.map((r) => [r.tickerSymbol, r._min.priceDate])
+    )
+
+    await Promise.allSettled(
+      usSymbols.map(async ({ symbol, exchange }) => {
+        const earliestCached = earliestBySymbol.get(symbol)
+        // Only backfill if we don't have data going back to anchorLookbackDate
+        if (earliestCached && earliestCached <= anchorLookbackDate) return
+
+        // Fetch from period start (or anchorLookback) to just before what we already have
+        const fetchTo = earliestCached
+          ? new Date(earliestCached.getTime() - 86400000)
+          : new Date()
+        const fetchFrom = anchorLookbackDate
+
+        if (fetchFrom >= fetchTo) return
+
+        const bars = await fetchUSPriceHistory(symbol, fetchFrom, fetchTo)
+        if (bars.length === 0) return
+
+        await prisma.priceCache.createMany({
+          data: bars.map((b) => ({
+            tickerSymbol: symbol,
+            exchange,
+            price: b.price,  // already in cents (bigint) from fetchUSPriceHistory
+            currency: 'USD',
+            priceDate: b.date,
+            fetchedAt: new Date(),
+          })),
+          skipDuplicates: true,
+        })
+      })
+    )
+  }
 
   // Fetch series rows (startDate → today) and anchor candidates (anchorLookback → startDate) in parallel
   const [seriesRows, anchorRows] = await Promise.all([

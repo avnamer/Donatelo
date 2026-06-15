@@ -7,11 +7,10 @@ import {
   getLatestDipAlertAge,
   upsertDipAlerts,
   deleteStaleDipAlerts,
+  type DipAlertInsert,
 } from '@/lib/db/queries'
 import { computePeaks, backfillPriceHistories } from '@/lib/dip-alerts/compute'
 import { generateDipSuggestion } from '@/lib/dip-alerts/ai-suggestion'
-
-const DIP_THRESHOLD = -0.10
 
 function isSameDay(date: Date): boolean {
   const today = new Date()
@@ -37,6 +36,9 @@ export async function GET(request: NextRequest) {
   const portfolio = await getPortfolioWithStructure(portfolioId, user.id)
   if (!portfolio) return NextResponse.json({ error: 'Portfolio not found' }, { status: 404 })
 
+  const globalDipThreshold = -(portfolio as any).globalDipThreshold
+  const globalBuyNowThreshold = -(portfolio as any).globalBuyNowThreshold
+
   if (!force && isFresh) {
     const alerts = await getDipAlertsForPortfolio(portfolioId)
     return NextResponse.json({
@@ -45,6 +47,8 @@ export async function GET(request: NextRequest) {
       totalHoldings: null,
       alertCount: alerts.length,
       cached: true,
+      globalDipThreshold: (portfolio as any).globalDipThreshold,
+      globalBuyNowThreshold: (portfolio as any).globalBuyNowThreshold,
     })
   }
 
@@ -59,6 +63,8 @@ export async function GET(request: NextRequest) {
           ticker: h.tickerSymbol,
           name: h.name,
           exchange: h.exchange,
+          dipThreshold: (h as any).dipThreshold as number | null,
+          buyNowThreshold: (h as any).buyNowThreshold as number | null,
         }))
     )
     .filter((h) => {
@@ -82,7 +88,18 @@ export async function GET(request: NextRequest) {
     holdings.map(async (holding) => {
       const peaks = await computePeaks(holding.ticker, holding.exchange)
       if (!peaks) return null
-      if (peaks.dropFrom52w > DIP_THRESHOLD) return null
+
+      const effectiveDipThreshold = holding.dipThreshold != null
+        ? -holding.dipThreshold
+        : globalDipThreshold
+      const effectiveBuyNowThreshold = holding.buyNowThreshold != null
+        ? -holding.buyNowThreshold
+        : globalBuyNowThreshold
+
+      const dipTriggered = peaks.dropFrom52w <= effectiveDipThreshold
+      const buyNowTriggered = peaks.dropFromATH != null && peaks.dropFromATH <= effectiveBuyNowThreshold
+
+      if (!dipTriggered && !buyNowTriggered) return null
 
       let aiSuggestion: string | null = null
       try {
@@ -112,12 +129,14 @@ export async function GET(request: NextRequest) {
         dropFrom90d: peaks.dropFrom90d,
         priceHistory: peaks.priceHistory90d,
         aiSuggestion,
+        dipTriggered,
+        buyNowTriggered,
         computedAt: now,
       }
     })
   )
 
-  type AlertData = Parameters<typeof upsertDipAlerts>[0][number]
+  type AlertData = DipAlertInsert
   const newAlerts = results
     .filter((r): r is PromiseFulfilledResult<AlertData> =>
       r.status === 'fulfilled' && r.value != null
@@ -140,5 +159,7 @@ export async function GET(request: NextRequest) {
     totalHoldings: holdings.length,
     alertCount: alerts.length,
     cached: false,
+    globalDipThreshold: (portfolio as any).globalDipThreshold,
+    globalBuyNowThreshold: (portfolio as any).globalBuyNowThreshold,
   })
 }

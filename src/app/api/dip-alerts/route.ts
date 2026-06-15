@@ -84,10 +84,18 @@ export async function GET(request: NextRequest) {
     now
   )
 
+  // Track holdings for which we successfully computed peaks (regardless of trigger status).
+  // This is separate from newAlerts so we only delete stale rows for removed holdings,
+  // not for holdings that are currently healthy (not triggering a dip alert).
+  const computedHoldingIds = new Set<string>()
+
   const results = await Promise.allSettled(
     holdings.map(async (holding) => {
       const peaks = await computePeaks(holding.ticker, holding.exchange)
       if (!peaks) return null
+
+      // Mark that we have valid price data for this holding
+      computedHoldingIds.add(holding.id)
 
       const effectiveDipThreshold = holding.dipThreshold != null
         ? -holding.dipThreshold
@@ -145,11 +153,11 @@ export async function GET(request: NextRequest) {
 
   await upsertDipAlerts(newAlerts)
 
-  // Only clean up stale alerts when at least one peak was successfully computed —
-  // prevents wiping all alerts when a transient price-data gap causes zero results.
-  const anyPeakComputed = results.some((r) => r.status === 'fulfilled' && r.value !== undefined)
-  if (anyPeakComputed) {
-    await deleteStaleDipAlerts(portfolioId, newAlerts.map((a) => a.holdingId))
+  // Delete stale alerts only for holdings where we successfully fetched price data.
+  // This removes rows for holdings removed from the portfolio while preserving
+  // alerts for holdings that are currently healthy (not triggering any threshold).
+  if (computedHoldingIds.size > 0) {
+    await deleteStaleDipAlerts(portfolioId, [...computedHoldingIds])
   }
 
   const alerts = await getDipAlertsForPortfolio(portfolioId)

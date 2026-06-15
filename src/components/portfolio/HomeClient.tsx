@@ -179,7 +179,7 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
             value={returnPct}
             positive={isPositive}
             loading={metrics.pricesLoading}
-            tooltip="תשואה כוללת: (רווח לא ממומש + רווח ממומש) ÷ סך הון שנפרס. כולל גם פוזיציות שנמכרו בעבר — לכן עשוי להיות שונה במעט מ-Performance בגרף."
+            tooltip="תשואה כוללת: (רווח/הפסד לא ממומש + רווח/הפסד ממומש) ÷ סך הון שנפרס. כולל גם תוצאות של פוזיציות שנמכרו בעבר — לכן עשוי להיות שונה מ-Performance בגרף שמציג רק פוזיציות פתוחות."
           />
           <KpiRow
             label="GAIN"

@@ -229,7 +229,7 @@ export function PerformanceChart({ data, benchmarkData = [], loading }: Performa
         <div>
           <span className="flex items-center gap-1">
             <p className="text-sm font-medium text-muted-foreground">Performance</p>
-            <InfoTooltip text="ביצועי התיק מחושבים כיחס ערך שוק לעלות (V/cost). הערך הסופי קרוב ל-RETURN אך אינו זהה — ההבדל נובע מרווחים ממומשים ממכירות עבר שנכללים ב-RETURN אך לא בגרף." />
+            <InfoTooltip text="ביצועי התיק מחושבים כיחס ערך שוק לעלות (V/cost) של הפוזיציות הפתוחות בלבד. הפער מ-RETURN נובע מכך שב-RETURN נכללים גם רווחים והפסדים ממומשים מפוזיציות שנמכרו בעבר." />
           </span>
           {data.length > 1 && (
             <p className={cn('text-lg font-bold', isPositive ? 'text-gain' : 'text-loss')}>

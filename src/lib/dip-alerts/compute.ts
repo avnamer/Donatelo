@@ -15,6 +15,8 @@ export interface PeakData {
 
 // Minimum trading days expected in 52 weeks (accounting for weekends/holidays)
 const MIN_52W_ENTRIES = 180
+// Minimum trading days expected in 5 years (for ATH computation)
+const MIN_5Y_ENTRIES = 900
 
 // Polygon.io free tier: 5 req/min → 1 request per 13s to be safe
 const POLYGON_RATE_DELAY_MS = 13_000
@@ -73,6 +75,40 @@ export async function backfillPriceHistories(
       await sleep(POLYGON_RATE_DELAY_MS)
     }
   }
+}
+
+/**
+ * Backfill 5-year price history for TASE holdings so ATH reflects real historical peaks.
+ * Yahoo Finance has no rate limit, so we can safely fetch more data.
+ * Skipped if the cache already has sufficient entries for the 5y window.
+ * Returns true if any ticker actually had new data fetched (cache was incomplete).
+ */
+export async function backfillATHHistoriesForTase(
+  holdings: Array<{ ticker: string; exchange: string }>,
+  from5y: Date,
+  to: Date
+): Promise<boolean> {
+  const taseHoldings = holdings.filter((h) => h.exchange === 'TASE')
+  let anyFetched = false
+  for (const holding of taseHoldings) {
+    const existing = await getHistoricalPrices(holding.ticker, from5y, to)
+    if (existing.length >= MIN_5Y_ENTRIES) continue // already have enough data
+    const history = await fetchTasePriceHistory(holding.ticker, from5y, to)
+    if (history.length === 0) continue
+    anyFetched = true
+    await Promise.allSettled(
+      history.map((entry) =>
+        upsertPrice({
+          tickerSymbol: holding.ticker,
+          exchange: holding.exchange,
+          price: entry.price,
+          currency: entry.currency,
+          priceDate: entry.date,
+        })
+      )
+    )
+  }
+  return anyFetched
 }
 
 export async function computePeaks(

@@ -115,11 +115,17 @@ export function buildIndexedPerformance(
   }
 
   const result: PerformancePoint[] = []
+  let baseValue: number | null = null
 
   for (const iso of sortedDates) {
     const { V, cost } = valueAndCost(iso)
     if (V <= 0 || cost <= 0) continue
-    result.push({ date: new Date(iso), index: 100 * V / cost })
+    // Capture the first valid portfolio market value as the period baseline.
+    // Using V (market value) instead of cost avoids the purchase-price vs
+    // close-price discrepancy on the purchase date when the period extends
+    // before the portfolio started (e.g. selecting 3Y on a 2.5Y portfolio).
+    if (baseValue === null) baseValue = V
+    result.push({ date: new Date(iso), index: 100 * V / baseValue })
   }
 
   return result

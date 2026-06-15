@@ -61,8 +61,9 @@ export function DipAlertsSection({ portfolioId }: DipAlertsSectionProps) {
   const globalDipThreshold = data?.globalDipThreshold ?? 0.10
   const globalBuyNowThreshold = data?.globalBuyNowThreshold ?? 0.20
 
-  const dipAlerts = alerts.filter((a) => a.dipTriggered)
   const buyNowAlerts = alerts.filter((a) => a.buyNowTriggered)
+  const buyNowIds = new Set(buyNowAlerts.map((a) => a.id))
+  const dipAlerts = alerts.filter((a) => a.dipTriggered && !buyNowIds.has(a.id))
 
   // Check if any alert has a non-null ATH (to decide whether to show Hist. toggle)
   const hasATH = alerts.some((a) => a.highATH != null && a.highATH !== a.high52w)

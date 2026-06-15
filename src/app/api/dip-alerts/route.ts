@@ -9,7 +9,7 @@ import {
   deleteStaleDipAlerts,
   type DipAlertInsert,
 } from '@/lib/db/queries'
-import { computePeaks, backfillPriceHistories } from '@/lib/dip-alerts/compute'
+import { computePeaks, backfillPriceHistories, backfillATHHistoriesForTase } from '@/lib/dip-alerts/compute'
 import { generateDipSuggestion } from '@/lib/dip-alerts/ai-suggestion'
 
 function isSameDay(date: Date): boolean {
@@ -41,15 +41,55 @@ export async function GET(request: NextRequest) {
 
   if (!force && isFresh) {
     const alerts = await getDipAlertsForPortfolio(portfolioId)
-    return NextResponse.json({
-      alerts,
-      computedAt: lastRun.toISOString(),
-      totalHoldings: null,
-      alertCount: alerts.length,
-      cached: true,
-      globalDipThreshold: (portfolio as any).globalDipThreshold,
-      globalBuyNowThreshold: (portfolio as any).globalBuyNowThreshold,
-    })
+
+    // Detect stale cache case 1: row predates the buyNow feature (migration default=false)
+    // but stock already qualifies by dropFrom52w alone.
+    const hasStaleBuyNowByDrop = alerts.some(
+      (a) => !a.buyNowTriggered && a.dropFrom52w <= globalBuyNowThreshold
+    )
+
+    if (hasStaleBuyNowByDrop) {
+      // fall through to full recompute below
+    } else {
+      // Detect stale cache case 2: the 5-year ATH backfill may not have run yet for TASE stocks.
+      // Run the backfill in the cached path — it's fast (no-op if data already exists).
+      // Only fall through to full recompute if it actually fetched new data.
+      const hasTase = portfolio.folders.some((f) =>
+        f.holdings.some((h) => h.exchange === 'TASE')
+      )
+      if (hasTase) {
+        const from5y = new Date()
+        from5y.setFullYear(from5y.getFullYear() - 5)
+        const taseHoldings = portfolio.folders
+          .flatMap((f) => f.holdings)
+          .filter((h) => h.exchange === 'TASE')
+          .map((h) => ({ ticker: h.tickerSymbol, exchange: h.exchange }))
+        const newATHData = await backfillATHHistoriesForTase(taseHoldings, from5y, new Date())
+        if (!newATHData) {
+          // No new data — cache is valid
+          return NextResponse.json({
+            alerts,
+            computedAt: lastRun.toISOString(),
+            totalHoldings: null,
+            alertCount: alerts.length,
+            cached: true,
+            globalDipThreshold: (portfolio as any).globalDipThreshold,
+            globalBuyNowThreshold: (portfolio as any).globalBuyNowThreshold,
+          })
+        }
+        // newATHData = true → new 5y data fetched, fall through to recompute
+      } else {
+        return NextResponse.json({
+          alerts,
+          computedAt: lastRun.toISOString(),
+          totalHoldings: null,
+          alertCount: alerts.length,
+          cached: true,
+          globalDipThreshold: (portfolio as any).globalDipThreshold,
+          globalBuyNowThreshold: (portfolio as any).globalBuyNowThreshold,
+        })
+      }
+    }
   }
 
   // Deduplicate by ticker — if same stock appears in multiple folders,
@@ -81,6 +121,16 @@ export async function GET(request: NextRequest) {
   await backfillPriceHistories(
     holdings.map((h) => ({ ticker: h.ticker, exchange: h.exchange })),
     from52w,
+    now
+  )
+
+  // Backfill 5-year history for TASE stocks so ATH reflects true historical peaks.
+  // Yahoo Finance has no rate limit — runs in parallel for all TASE holdings.
+  const from5y = new Date(now)
+  from5y.setFullYear(from5y.getFullYear() - 5)
+  await backfillATHHistoriesForTase(
+    holdings.map((h) => ({ ticker: h.ticker, exchange: h.exchange })),
+    from5y,
     now
   )
 

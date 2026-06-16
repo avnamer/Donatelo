@@ -4,6 +4,7 @@
 // Never trust client-supplied userId — always derive from session
 // ─────────────────────────────────────────────
 
+import { cache } from 'react'
 import { prisma } from '@/lib/db/prisma'
 
 // ─── Types ────────────────────────────────────
@@ -18,8 +19,9 @@ export type PortfolioWithStructure = Awaited<
 
 /**
  * All portfolios for a user, newest first.
+ * cache() deduplicates calls within a single request (layout + page both call this).
  */
-export async function getPortfolios(userId: string) {
+export const getPortfolios = cache(async function getPortfolios(userId: string) {
   return prisma.portfolio.findMany({
     where: { userId },
     orderBy: { createdAt: 'asc' },
@@ -31,7 +33,7 @@ export async function getPortfolios(userId: string) {
       updatedAt: true,
     },
   })
-}
+})
 
 /**
  * Single portfolio + full tree (folders → holdings → lots).

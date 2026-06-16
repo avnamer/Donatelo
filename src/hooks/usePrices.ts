@@ -3,7 +3,7 @@
 // Polls every 5 minutes during market hours, stops on weekend
 // ─────────────────────────────────────────────
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 
 export interface PriceData {
   price: bigint      // in agorot (ILS) or cents (USD)
@@ -48,6 +48,7 @@ export function usePrices(tickers: string[]) {
     enabled: tickers.length > 0,
     staleTime: 1000 * 60 * 5,
     refetchInterval: 1000 * 60 * 5,
+    placeholderData: keepPreviousData,
   })
 }
 

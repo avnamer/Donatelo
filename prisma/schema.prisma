@@ -183,6 +183,19 @@ model FxRate {
   @@map("fx_rates")
 }
 
+model DailyClose {
+  id           String   @id @default(uuid())
+  tickerSymbol String   @map("ticker_symbol")
+  exchange     String
+  closeDate    DateTime @map("close_date") @db.Date
+  close        Decimal  @db.Decimal(18, 6)
+  fetchedAt    DateTime @default(now()) @map("fetched_at")
+
+  @@unique([tickerSymbol, closeDate])
+  @@index([tickerSymbol, closeDate(sort: Desc)])
+  @@map("daily_closes")
+}
+
 model ExploreProfile {
   id          String   @id @default(uuid())
   name        String

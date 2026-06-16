@@ -97,7 +97,9 @@ export function HomeClient({ holdings, portfolioName, portfolioId, folders }: Ho
     return performanceData[0].date
   }, [performanceData])
 
-  const { data: benchmarkData } = useBenchmark(benchmark, chartFromDate)
+  // Use raw fromDate so the benchmark request fires in parallel with the series,
+  // rather than waiting for the series to resolve first.
+  const { data: benchmarkData } = useBenchmark(benchmark, fromDate)
 
   // Build allocation segments for donut
   const donutSegments = useMemo(() => {

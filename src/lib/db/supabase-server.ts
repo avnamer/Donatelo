@@ -10,6 +10,7 @@
 import { createServerClient as _createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
+import { cache } from 'react'
 
 // ─── 1. Server client (use in Server Components / Route Handlers) ─────
 
@@ -56,9 +57,11 @@ export function createAdminClient() {
 
 // ─── Helper: get current user (server) ──────────────────────
 
-export async function getCurrentUser() {
+// cache() memoizes per request — layout.tsx, page.tsx, and API routes all share
+// the same auth.getUser() result instead of making separate network calls.
+export const getCurrentUser = cache(async () => {
   const supabase = await createServerSupabaseClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) return null
   return user
-}
+})

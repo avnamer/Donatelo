@@ -16,8 +16,11 @@
 // ─────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/db/supabase-server'
 import { prisma } from '@/lib/db/prisma'
+
+type StoredDailyCloseRow = Prisma.DailyCloseGetPayload<{ select: { closeDate: true; close: true } }>
 
 export interface DailyPoint { date: string; close: number }
 
@@ -140,7 +143,7 @@ async function fetchTickerSeries(
     select: { closeDate: true, close: true },
   })
 
-  const storedPoints: DailyPoint[] = stored.map((r) => ({
+  const storedPoints: DailyPoint[] = stored.map((r: StoredDailyCloseRow) => ({
     date: r.closeDate.toISOString().slice(0, 10),
     close: Number(r.close),
   }))

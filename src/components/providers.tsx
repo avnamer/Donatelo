@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { PersistQueryClientProvider, type PersistedClient } from '@tanstack/react-query-persist-client'
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
@@ -38,7 +39,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   if (!persister) {
     return (
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-        {children}
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
       </ThemeProvider>
     )
   }

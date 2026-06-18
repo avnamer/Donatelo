@@ -152,8 +152,30 @@ DROP POLICY IF EXISTS "authenticated_read_fx_rates" ON fx_rates;
 CREATE POLICY "authenticated_read_fx_rates" ON fx_rates
   FOR SELECT USING (auth.role() = 'authenticated');
 
+-- ─── daily_closes (shared cache — same as price_cache) ───────────────────────
+ALTER TABLE daily_closes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "authenticated_read_daily_closes" ON daily_closes;
+CREATE POLICY "authenticated_read_daily_closes" ON daily_closes
+  FOR SELECT USING (auth.role() = 'authenticated');
+
 -- ─── explore_profiles (public read) ──────────────────────────────────────────
 ALTER TABLE explore_profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "public_read_explore_profiles" ON explore_profiles;
 CREATE POLICY "public_read_explore_profiles" ON explore_profiles
   FOR SELECT USING (true);
+
+-- ─── csv_import_rules (user data) ────────────────────────────────────────────
+ALTER TABLE csv_import_rules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "users_own_csv_import_rules" ON csv_import_rules;
+CREATE POLICY "users_own_csv_import_rules" ON csv_import_rules
+  FOR ALL
+  USING (user_id = auth.uid()::text)
+  WITH CHECK (user_id = auth.uid()::text);
+
+-- ─── dip_alerts (user data) ──────────────────────────────────────────────────
+ALTER TABLE dip_alerts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "users_own_dip_alerts" ON dip_alerts;
+CREATE POLICY "users_own_dip_alerts" ON dip_alerts
+  FOR ALL
+  USING (user_id = auth.uid()::text)
+  WITH CHECK (user_id = auth.uid()::text);

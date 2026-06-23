@@ -320,6 +320,8 @@ function Badge({ type }: { type: CsvTransactionType }) {
     CASH_WITHDRAWAL: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
     FX_CONVERSION: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
     COMMISSION: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+    TAX_ILS: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+    TAX_USD: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
     IGNORE: 'bg-muted text-muted-foreground',
   }
   return (

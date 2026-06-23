@@ -53,39 +53,40 @@ function parseCsv(text: string): Record<string, string>[] {
 
 // ─── Encoding-aware file reader ───────────────────
 // Israeli brokers export Windows-1255; f.text() assumes UTF-8 → gibberish.
-// Strategy: decode as UTF-8 first; if no Hebrew Unicode chars found, retry as Windows-1255.
-
-function hasHebrew(text: string) {
-  return /[א-ת]/.test(text)
-}
+// Strategy: try UTF-8 with fatal:true — if the file contains non-UTF-8 bytes
+// (e.g. Hebrew in Windows-1255) it throws, and we fall through to Windows-1255.
 
 async function readCsvWithEncoding(f: File): Promise<string> {
   const buf = await f.arrayBuffer()
-
-  // Check for UTF-8 BOM (EF BB BF)
   const bytes = new Uint8Array(buf)
+
+  // Strip UTF-8 BOM if present (EF BB BF)
   const hasBom = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF
+  const decodeTarget = hasBom ? buf.slice(3) : buf
 
-  const utf8 = new TextDecoder('utf-8').decode(buf)
-  if (hasBom || hasHebrew(utf8)) return utf8
-
-  // No Hebrew in UTF-8 → try Windows-1255 (common for Israeli brokers)
+  // Try strict UTF-8 — throws on any invalid byte sequence
   try {
-    const win1255 = new TextDecoder('windows-1255').decode(buf)
-    if (hasHebrew(win1255)) return win1255
+    return new TextDecoder('utf-8', { fatal: true }).decode(decodeTarget)
   } catch {
-    // windows-1255 not supported in this browser — fall through
+    // File contains non-UTF-8 bytes → try Hebrew encodings
   }
 
-  // Try ISO-8859-8 (another Hebrew encoding)
+  // Windows-1255: most common for Israeli brokers (Excel, IBI, Excellence, etc.)
   try {
-    const iso = new TextDecoder('iso-8859-8').decode(buf)
-    if (hasHebrew(iso)) return iso
+    return new TextDecoder('windows-1255').decode(decodeTarget)
   } catch {
-    // not supported — fall through
+    // Browser doesn't support windows-1255
   }
 
-  return utf8 // best effort
+  // ISO-8859-8: older Hebrew encoding
+  try {
+    return new TextDecoder('iso-8859-8').decode(decodeTarget)
+  } catch {
+    // Not supported either
+  }
+
+  // Last resort: lenient UTF-8 (replaces bad chars with U+FFFD)
+  return new TextDecoder('utf-8').decode(decodeTarget)
 }
 
 // ─── Field extraction (shared between interpretation & payload) ──

@@ -12,24 +12,37 @@ export type CsvTransactionType =
 
 export interface CsvRule {
   id: string
-  // pattern: map of field name → { contains | equals | startsWith } value (all must match)
   pattern: Record<string, { contains?: string; equals?: string; startsWith?: string }>
   transactionType: CsvTransactionType
+  // Static values (cash / FX / commission types)
   ticker?: string | null
   exchange?: string | null
   cashAccountName?: string | null
   toCashAccountName?: string | null
   notes?: string | null
+  // Column mappings — for security types, read dynamically from each row
+  tickerColumn?: string | null
+  sharesColumn?: string | null
+  priceColumn?: string | null
+  amountColumn?: string | null
+  exchangeForUsd?: string | null  // 'NYSE' | 'NASDAQ' when currency is USD
 }
 
 export interface ClassifiedRow {
   index: number
   row: Record<string, string>
   type: CsvTransactionType
+  // Resolved at classification time from column mappings or static values
   ticker?: string
   exchange?: string
   cashAccountName?: string
   toCashAccountName?: string
+  // Column references carried forward so buildTransactions can re-resolve
+  tickerColumn?: string
+  sharesColumn?: string
+  priceColumn?: string
+  amountColumn?: string
+  exchangeForUsd?: string
   ruleId?: string
 }
 
@@ -53,22 +66,48 @@ function matchesPattern(
   return true
 }
 
+// Determine exchange from currency column value
+function resolveExchange(row: Record<string, string>, exchangeForUsd?: string | null): string {
+  const currencyRaw = row['מטבע'] || row['Currency'] || row['currency'] || ''
+  const currency = currencyRaw.trim().toUpperCase()
+  if (currency === 'USD') return exchangeForUsd || 'NYSE'
+  return 'TASE'
+}
+
+function classifiedFromRule(row: Record<string, string>, rule: CsvRule): Omit<ClassifiedRow, 'index'> {
+  // Resolve ticker: prefer column mapping over static value
+  const ticker = rule.tickerColumn
+    ? (row[rule.tickerColumn] ?? '').trim()
+    : (rule.ticker ?? undefined)
+
+  // Resolve exchange from currency if column mappings are used, else use static
+  const exchange = rule.tickerColumn
+    ? resolveExchange(row, rule.exchangeForUsd)
+    : (rule.exchange ?? undefined)
+
+  return {
+    row,
+    type: rule.transactionType,
+    ticker,
+    exchange,
+    cashAccountName: rule.cashAccountName ?? undefined,
+    toCashAccountName: rule.toCashAccountName ?? undefined,
+    tickerColumn: rule.tickerColumn ?? undefined,
+    sharesColumn: rule.sharesColumn ?? undefined,
+    priceColumn: rule.priceColumn ?? undefined,
+    amountColumn: rule.amountColumn ?? undefined,
+    exchangeForUsd: rule.exchangeForUsd ?? undefined,
+    ruleId: rule.id,
+  }
+}
+
 export function classifyRow(
   row: Record<string, string>,
   rules: CsvRule[],
 ): ClassifiedRow | null {
   for (const rule of rules) {
     if (matchesPattern(row, rule.pattern)) {
-      return {
-        index: -1,
-        row,
-        type: rule.transactionType,
-        ticker: rule.ticker ?? undefined,
-        exchange: rule.exchange ?? undefined,
-        cashAccountName: rule.cashAccountName ?? undefined,
-        toCashAccountName: rule.toCashAccountName ?? undefined,
-        ruleId: rule.id,
-      }
+      return { index: -1, ...classifiedFromRule(row, rule) }
     }
   }
   return null
@@ -94,9 +133,6 @@ export function classifyAll(
   return { classified, unknown }
 }
 
-// Build a rule pattern from a sample row by picking all non-empty fields
-// that look like good discriminators (short string fields).
-// The caller should trim down to the most relevant field.
 export function buildPatternFromRow(
   row: Record<string, string>,
   chosenField: string,
@@ -108,8 +144,6 @@ export function buildPatternFromRow(
   }
 }
 
-// After a rule is learned from one row, find all other unknown rows
-// that now match it.
 export function applyRuleToUnknowns(
   unknowns: UnknownRow[],
   rule: CsvRule,
@@ -119,16 +153,7 @@ export function applyRuleToUnknowns(
 
   for (const u of unknowns) {
     if (matchesPattern(u.row, rule.pattern)) {
-      nowClassified.push({
-        index: u.index,
-        row: u.row,
-        type: rule.transactionType,
-        ticker: rule.ticker ?? undefined,
-        exchange: rule.exchange ?? undefined,
-        cashAccountName: rule.cashAccountName ?? undefined,
-        toCashAccountName: rule.toCashAccountName ?? undefined,
-        ruleId: rule.id,
-      })
+      nowClassified.push({ index: u.index, ...classifiedFromRule(u.row, rule) })
     } else {
       stillUnknown.push(u)
     }

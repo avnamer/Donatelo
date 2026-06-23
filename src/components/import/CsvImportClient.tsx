@@ -91,18 +91,37 @@ async function readCsvWithEncoding(f: File): Promise<string> {
 
 // ─── Field extraction (shared between interpretation & payload) ──
 
-function extractFields(row: Record<string, string>) {
+type ColumnHints = {
+  sharesColumn?: string
+  priceColumn?: string
+  amountColumn?: string
+}
+
+function parseNum(raw: string) {
+  return parseFloat(raw.replace(/,/g, '')) || 0
+}
+
+function extractFields(row: Record<string, string>, hints?: ColumnHints) {
   const date = row['תאריך'] || row['תאריך ביצוע'] || row['Date'] || row['date'] || ''
-  const sharesRaw = row['כמות'] || row['מניות'] || row['Quantity'] || row['shares'] || ''
-  const priceRaw = row['מחיר'] || row['שער'] || row['Price'] || row['price'] || ''
-  const amountRaw = row['שווי'] || row['סכום'] || row['Amount'] || row['amount'] || row['ערך'] || ''
+
+  const sharesRaw = (hints?.sharesColumn ? row[hints.sharesColumn] : null)
+    ?? row['כמות'] ?? row['מניות'] ?? row['Quantity'] ?? row['shares'] ?? ''
+  const priceRaw = (hints?.priceColumn ? row[hints.priceColumn] : null)
+    ?? row['מחיר'] ?? row['שער'] ?? row['Price'] ?? row['price'] ?? ''
+  const amountRaw = (hints?.amountColumn ? row[hints.amountColumn] : null)
+    ?? row['שווי'] ?? row['סכום'] ?? row['Amount'] ?? row['amount'] ?? row['ערך'] ?? ''
+
   const usdAmountRaw = row['סכום מטבע'] || row['סכום דולרים'] || ''
   const currency = (row['מטבע'] || row['Currency'] || 'ILS').trim().toUpperCase() as 'ILS' | 'USD'
-  const shares = parseFloat(sharesRaw.replace(/,/g, '')) || 0
-  const price = parseFloat(priceRaw.replace(/,/g, '')) || 0
-  const amount = parseFloat(amountRaw.replace(/,/g, '')) || 0
-  const usdAmount = parseFloat(usdAmountRaw.replace(/,/g, '')) || 0
-  return { date, shares, price, amount, usdAmount, currency }
+
+  return {
+    date,
+    shares: parseNum(sharesRaw),
+    price: parseNum(priceRaw),
+    amount: parseNum(amountRaw),
+    usdAmount: parseNum(usdAmountRaw),
+    currency,
+  }
 }
 
 // ─── Interpretation ──────────────────────────────
@@ -124,7 +143,12 @@ function interpretRow(c: ClassifiedRow): Interpretation {
     return { understood: 'שורה שתדולג', willDo: 'לא יבוצע שום עדכון', warnings: [] }
   }
 
-  const { date, shares, price, amount, usdAmount, currency } = extractFields(c.row)
+  const { date, shares, price, amount, usdAmount, currency } = extractFields(c.row, {
+    sharesColumn: c.sharesColumn,
+    priceColumn: c.priceColumn,
+    amountColumn: c.amountColumn,
+  })
+  const ticker = c.tickerColumn ? (c.row[c.tickerColumn] ?? '').trim() : c.ticker
   const warnings: string[] = []
   const effectivePrice = price || (shares > 0 ? amount / shares : 0)
   const effectiveTotal = amount || (shares > 0 && price > 0 ? shares * price : 0)
@@ -132,32 +156,32 @@ function interpretRow(c: ClassifiedRow): Interpretation {
   if (!date) warnings.push('תאריך לא נמצא בשורה')
 
   if (c.type === 'SECURITY_BUY') {
-    if (!c.ticker) warnings.push('טיקר לא הוגדר בכלל — הקנייה לא תיוחס להחזקה')
+    if (!ticker) warnings.push('טיקר לא הוגדר — הקנייה לא תיוחס להחזקה')
     if (!shares) warnings.push('כמות מניות לא נמצאה')
     if (!effectivePrice) warnings.push('מחיר למניה לא נמצא')
     return {
-      understood: `קנייה: ${shares || '?'} יחידות של ${c.ticker || '?'} (${c.exchange || 'TASE'}) ב-${fmt(effectivePrice, currency)} ליחידה`,
-      willDo: `יוצר lot חדש + רשומת SECURITY_BUY. סה"כ: ${fmt(effectiveTotal, currency)}. חשבון: ${c.cashAccountName || '—'}`,
+      understood: `קנייה: ${shares || '?'} יחידות של ${ticker || '?'} (${c.exchange || 'TASE'}) ב-${fmt(effectivePrice, currency)} ליחידה`,
+      willDo: `יוצר lot חדש + רשומת SECURITY_BUY. סה"כ: ${fmt(effectiveTotal, currency)}`,
       warnings,
     }
   }
 
   if (c.type === 'SECURITY_SELL') {
-    if (!c.ticker) warnings.push('טיקר לא הוגדר בכלל')
+    if (!ticker) warnings.push('טיקר לא הוגדר')
     if (!shares) warnings.push('כמות לא נמצאה')
     if (!effectivePrice) warnings.push('מחיר לא נמצא')
     return {
-      understood: `מכירה: ${shares || '?'} יחידות של ${c.ticker || '?'} (${c.exchange || 'TASE'}) ב-${fmt(effectivePrice, currency)} ליחידה`,
+      understood: `מכירה: ${shares || '?'} יחידות של ${ticker || '?'} (${c.exchange || 'TASE'}) ב-${fmt(effectivePrice, currency)} ליחידה`,
       willDo: `יוצר רשומת SECURITY_SELL. תמורה: ${fmt(effectiveTotal, currency)}`,
       warnings,
     }
   }
 
   if (c.type === 'DIVIDEND') {
-    if (!c.ticker) warnings.push('טיקר לא הוגדר')
+    if (!ticker) warnings.push('טיקר לא הוגדר')
     if (!amount) warnings.push('סכום דיבידנד לא נמצא')
     return {
-      understood: `דיבידנד מ-${c.ticker || '?'} בסך ${fmt(amount, currency)}`,
+      understood: `דיבידנד מ-${ticker || '?'} בסך ${fmt(amount, currency)}`,
       willDo: `יוצר רשומת DIVIDEND${c.cashAccountName ? ` ומעדכן חשבון "${c.cashAccountName}"` : ''}`,
       warnings,
     }
@@ -212,8 +236,13 @@ type TeachField = { field: string; matchType: 'equals' | 'contains' }
 interface TeachState {
   row: UnknownRow
   transactionType: CsvTransactionType | ''
-  ticker: string
-  exchange: string
+  // Column-based mappings (for security types)
+  tickerColumn: string       // which column holds the ticker
+  sharesColumn: string       // which column holds quantity
+  priceColumn: string        // which column holds price per share
+  amountColumn: string       // which column holds total amount
+  exchangeForUsd: 'NYSE' | 'NASDAQ'
+  // Cash / FX
   cashAccountName: string
   toCashAccountName: string
   chosenField: TeachField | null
@@ -389,8 +418,11 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
     setTeach({
       row: u,
       transactionType: '',
-      ticker: '',
-      exchange: 'TASE',
+      tickerColumn: fields[0] ?? '',
+      sharesColumn: fields[0] ?? '',
+      priceColumn: fields[0] ?? '',
+      amountColumn: fields[0] ?? '',
+      exchangeForUsd: 'NYSE',
       cashAccountName: 'מזומן ₪',
       toCashAccountName: 'מזומן $',
       chosenField: fields[0] ? { field: fields[0], matchType: 'equals' } : null,
@@ -408,14 +440,20 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
       teach.chosenField.matchType,
     )
 
+    const needsSecurity = ['SECURITY_BUY', 'SECURITY_SELL', 'DIVIDEND'].includes(teach.transactionType)
     const res = await fetch('/api/csv-rules', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         pattern,
         transactionType: teach.transactionType,
-        ticker: teach.ticker || undefined,
-        exchange: teach.exchange || undefined,
+        // Security types use column mappings
+        tickerColumn: needsSecurity ? teach.tickerColumn || undefined : undefined,
+        sharesColumn: needsSecurity ? teach.sharesColumn || undefined : undefined,
+        priceColumn: needsSecurity ? teach.priceColumn || undefined : undefined,
+        amountColumn: needsSecurity ? teach.amountColumn || undefined : undefined,
+        exchangeForUsd: needsSecurity ? teach.exchangeForUsd : undefined,
+        // Cash types use static account names
         cashAccountName: teach.cashAccountName || undefined,
         toCashAccountName: teach.toCashAccountName || undefined,
         notes: teach.notes || undefined,
@@ -431,12 +469,21 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
     const remainingUnknowns = unknowns.filter(u => u.index !== teach.row.index)
     const { nowClassified, stillUnknown } = applyRuleToUnknowns(remainingUnknowns, newRule)
 
+    const rowData = teach.row.row
+    const resolvedExchange = (rowData['מטבע'] || rowData['Currency'] || 'ILS').trim().toUpperCase() === 'USD'
+      ? teach.exchangeForUsd
+      : 'TASE'
     const taughtClassified: ClassifiedRow = {
       index: teach.row.index,
-      row: teach.row.row,
+      row: rowData,
       type: teach.transactionType as CsvTransactionType,
-      ticker: teach.ticker || undefined,
-      exchange: teach.exchange || undefined,
+      ticker: needsSecurity && teach.tickerColumn ? (rowData[teach.tickerColumn] ?? '').trim() : undefined,
+      exchange: needsSecurity ? resolvedExchange : undefined,
+      tickerColumn: needsSecurity ? teach.tickerColumn || undefined : undefined,
+      sharesColumn: needsSecurity ? teach.sharesColumn || undefined : undefined,
+      priceColumn: needsSecurity ? teach.priceColumn || undefined : undefined,
+      amountColumn: needsSecurity ? teach.amountColumn || undefined : undefined,
+      exchangeForUsd: needsSecurity ? teach.exchangeForUsd : undefined,
       cashAccountName: teach.cashAccountName || undefined,
       toCashAccountName: teach.toCashAccountName || undefined,
       ruleId: newRule.id,
@@ -467,12 +514,15 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
       .sort((a, b) => a.index - b.index)
       .map(c => {
         if (c.type === 'IGNORE') return { type: 'IGNORE', date: undefined }
-        const { date, shares, price, amount, usdAmount, currency } = extractFields(c.row)
+        const hints = { sharesColumn: c.sharesColumn, priceColumn: c.priceColumn, amountColumn: c.amountColumn }
+        const { date, shares, price, amount, usdAmount, currency } = extractFields(c.row, hints)
         const effectivePrice = price || (shares > 0 ? amount / shares : 0)
+        const ticker = (c.tickerColumn ? (c.row[c.tickerColumn] ?? '').trim() : c.ticker) || ''
+        const exchange = c.exchange || 'TASE'
         switch (c.type) {
-          case 'SECURITY_BUY': return { type: 'SECURITY_BUY', date, ticker: c.ticker || '', exchange: c.exchange || 'TASE', shares, pricePerShare: effectivePrice, currency }
-          case 'SECURITY_SELL': return { type: 'SECURITY_SELL', date, ticker: c.ticker || '', exchange: c.exchange || 'TASE', shares, pricePerShare: effectivePrice, currency }
-          case 'DIVIDEND': return { type: 'DIVIDEND', date, ticker: c.ticker || '', exchange: c.exchange || 'TASE', amount, currency, cashAccountName: c.cashAccountName }
+          case 'SECURITY_BUY': return { type: 'SECURITY_BUY', date, ticker, exchange, shares, pricePerShare: effectivePrice, currency }
+          case 'SECURITY_SELL': return { type: 'SECURITY_SELL', date, ticker, exchange, shares, pricePerShare: effectivePrice, currency }
+          case 'DIVIDEND': return { type: 'DIVIDEND', date, ticker, exchange, amount, currency, cashAccountName: c.cashAccountName }
           case 'CASH_DEPOSIT': return { type: 'CASH_DEPOSIT', date, amount, currency, cashAccountName: c.cashAccountName || 'מזומן ₪' }
           case 'CASH_WITHDRAWAL': return { type: 'CASH_WITHDRAWAL', date, amount, currency, cashAccountName: c.cashAccountName || 'מזומן ₪' }
           case 'FX_CONVERSION': return { type: 'FX_CONVERSION', date, ilsAmount: amount, ilsCashAccountName: c.cashAccountName || 'מזומן ₪', usdAmount, usdCashAccountName: c.toCashAccountName || 'מזומן $' }
@@ -749,6 +799,33 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
 
 // ─── Teach dialog ─────────────────────────────────
 
+function ColSelect({
+  label, value, fields, onChange, hint,
+}: {
+  label: string
+  value: string
+  fields: [string, string][]
+  onChange: (v: string) => void
+  hint?: string
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      <select
+        className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      >
+        <option value="">— לא רלוונטי —</option>
+        {fields.map(([k, v]) => (
+          <option key={k} value={k}>{k} = {v.slice(0, 30)}</option>
+        ))}
+      </select>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
 function TeachDialog({
   teach, onChange, onSave, onClose, saving,
 }: {
@@ -759,18 +836,26 @@ function TeachDialog({
   saving: boolean
 }) {
   const fields = Object.entries(teach.row.row).filter(([, v]) => v.trim())
-  const needsTicker = ['SECURITY_BUY', 'SECURITY_SELL', 'DIVIDEND'].includes(teach.transactionType)
+  const needsSecurity = ['SECURITY_BUY', 'SECURITY_SELL', 'DIVIDEND'].includes(teach.transactionType)
   const needsFx = teach.transactionType === 'FX_CONVERSION'
   const needsCash = ['CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'DIVIDEND'].includes(teach.transactionType)
 
-  // Live preview of interpretation while teaching
+  // Resolved currency from this row (for exchange auto-label)
+  const rowCurrency = (teach.row.row['מטבע'] || teach.row.row['Currency'] || 'ILS').trim().toUpperCase()
+  const autoExchange = rowCurrency === 'USD' ? teach.exchangeForUsd : 'TASE'
+
+  // Live preview
   const livePreview: ClassifiedRow | null = teach.transactionType
     ? {
         index: teach.row.index,
         row: teach.row.row,
         type: teach.transactionType as CsvTransactionType,
-        ticker: teach.ticker || undefined,
-        exchange: teach.exchange || undefined,
+        ticker: teach.tickerColumn ? (teach.row.row[teach.tickerColumn] ?? '').trim() : undefined,
+        exchange: autoExchange,
+        tickerColumn: teach.tickerColumn || undefined,
+        sharesColumn: teach.sharesColumn || undefined,
+        priceColumn: teach.priceColumn || undefined,
+        amountColumn: teach.amountColumn || undefined,
         cashAccountName: teach.cashAccountName || undefined,
         toCashAccountName: teach.toCashAccountName || undefined,
       }
@@ -803,29 +888,56 @@ function TeachDialog({
           </select>
         </div>
 
-        {needsTicker && (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">טיקר</label>
-              <input
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-mono uppercase"
-                placeholder="AAPL / 1111111"
-                value={teach.ticker}
-                onChange={e => onChange({ ...teach, ticker: e.target.value.toUpperCase() })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">בורסה</label>
-              <select
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                value={teach.exchange}
-                onChange={e => onChange({ ...teach, exchange: e.target.value })}
-              >
-                <option value="TASE">TASE (ת"א)</option>
-                <option value="NYSE">NYSE</option>
-                <option value="NASDAQ">NASDAQ</option>
-                <option value="OTHER">OTHER</option>
-              </select>
+        {/* Security column mappings */}
+        {needsSecurity && (
+          <div className="rounded-lg bg-muted/40 p-3 space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground">מיפוי עמודות (המערכת תקרא מכאן לכל שורה)</p>
+            <ColSelect
+              label="עמודת הטיקר / שם נייר"
+              value={teach.tickerColumn}
+              fields={fields}
+              onChange={v => onChange({ ...teach, tickerColumn: v })}
+              hint={teach.tickerColumn ? `ערך בשורה זו: "${teach.row.row[teach.tickerColumn] ?? ''}"` : undefined}
+            />
+            <ColSelect
+              label="עמודת כמות"
+              value={teach.sharesColumn}
+              fields={fields}
+              onChange={v => onChange({ ...teach, sharesColumn: v })}
+              hint={teach.sharesColumn ? `ערך: ${teach.row.row[teach.sharesColumn] ?? ''}` : undefined}
+            />
+            <ColSelect
+              label="עמודת מחיר ליחידה"
+              value={teach.priceColumn}
+              fields={fields}
+              onChange={v => onChange({ ...teach, priceColumn: v })}
+              hint={teach.priceColumn ? `ערך: ${teach.row.row[teach.priceColumn] ?? ''}` : undefined}
+            />
+            <ColSelect
+              label="עמודת סכום כולל"
+              value={teach.amountColumn}
+              fields={fields}
+              onChange={v => onChange({ ...teach, amountColumn: v })}
+              hint={teach.amountColumn ? `ערך: ${teach.row.row[teach.amountColumn] ?? ''}` : undefined}
+            />
+            {/* Exchange — auto from currency, but let user pick NYSE/NASDAQ for USD */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                בורסה — {rowCurrency === 'USD' ? 'מטבע USD זוהה' : `מטבע ${rowCurrency} → TASE אוטומטי`}
+              </label>
+              {rowCurrency === 'USD' && (
+                <select
+                  className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
+                  value={teach.exchangeForUsd}
+                  onChange={e => onChange({ ...teach, exchangeForUsd: e.target.value as 'NYSE' | 'NASDAQ' })}
+                >
+                  <option value="NYSE">NYSE</option>
+                  <option value="NASDAQ">NASDAQ</option>
+                </select>
+              )}
+              {rowCurrency !== 'USD' && (
+                <p className="text-xs text-muted-foreground">TASE (ת"א)</p>
+              )}
             </div>
           </div>
         )}

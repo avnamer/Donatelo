@@ -244,16 +244,23 @@ model AgentInsight {
 }
 
 model CsvImportRule {
-  id              String   @id @default(uuid())
-  userId          String   @map("user_id")
-  pattern         Json
-  transactionType String   @map("transaction_type")
-  ticker          String?
-  exchange        String?
-  cashAccountName String?  @map("cash_account_name")
-  toCashAccountName String? @map("to_cash_account_name")
-  notes           String?
-  createdAt       DateTime @default(now()) @map("created_at")
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  pattern           Json
+  transactionType   String   @map("transaction_type")
+  // Static values (legacy / for non-security types)
+  ticker            String?
+  exchange          String?
+  cashAccountName   String?  @map("cash_account_name")
+  toCashAccountName String?  @map("to_cash_account_name")
+  notes             String?
+  // Column mappings — read value from this column in each row
+  tickerColumn      String?  @map("ticker_column")
+  sharesColumn      String?  @map("shares_column")
+  priceColumn       String?  @map("price_column")
+  amountColumn      String?  @map("amount_column")
+  exchangeForUsd    String?  @map("exchange_for_usd")  // NYSE | NASDAQ when currency=USD
+  createdAt         DateTime @default(now()) @map("created_at")
 
   @@index([userId])
   @@map("csv_import_rules")

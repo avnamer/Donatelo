@@ -28,6 +28,11 @@ const CreateRuleSchema = z.object({
   cashAccountName: z.string().optional(),
   toCashAccountName: z.string().optional(),
   notes: z.string().optional(),
+  tickerColumn: z.string().optional(),
+  sharesColumn: z.string().optional(),
+  priceColumn: z.string().optional(),
+  amountColumn: z.string().optional(),
+  exchangeForUsd: z.enum(['NYSE', 'NASDAQ']).optional(),
 })
 
 export async function GET() {
@@ -62,6 +67,11 @@ export async function POST(req: NextRequest) {
       cashAccountName: parsed.data.cashAccountName,
       toCashAccountName: parsed.data.toCashAccountName,
       notes: parsed.data.notes,
+      tickerColumn: parsed.data.tickerColumn,
+      sharesColumn: parsed.data.sharesColumn,
+      priceColumn: parsed.data.priceColumn,
+      amountColumn: parsed.data.amountColumn,
+      exchangeForUsd: parsed.data.exchangeForUsd,
     },
   })
 

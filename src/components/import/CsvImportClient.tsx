@@ -259,6 +259,7 @@ interface TeachState {
   sharesColumn: string       // which column holds quantity
   priceColumn: string        // which column holds price per share
   amountColumn: string       // which column holds total amount
+  currencyColumn: string     // which column holds the row currency (ILS/USD)
   exchangeForUsd: 'NYSE' | 'NASDAQ'
   // Cash / FX
   cashAccountName: string
@@ -443,6 +444,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
       sharesColumn: fields[0] ?? '',
       priceColumn: fields[0] ?? '',
       amountColumn: fields[0] ?? '',
+      currencyColumn: '',
       exchangeForUsd: 'NYSE',
       cashAccountName: 'מזומן ₪',
       toCashAccountName: 'מזומן $',
@@ -473,6 +475,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
         sharesColumn: needsSecurity ? teach.sharesColumn || undefined : undefined,
         priceColumn: needsSecurity ? teach.priceColumn || undefined : undefined,
         amountColumn: needsSecurity ? teach.amountColumn || undefined : undefined,
+        currencyColumn: needsSecurity ? teach.currencyColumn || undefined : undefined,
         exchangeForUsd: needsSecurity ? teach.exchangeForUsd : undefined,
         // Cash types use static account names
         cashAccountName: teach.cashAccountName || undefined,
@@ -491,7 +494,10 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
     const { nowClassified, stillUnknown } = applyRuleToUnknowns(remainingUnknowns, newRule)
 
     const rowData = teach.row.row
-    const resolvedExchange = (rowData['מטבע'] || rowData['Currency'] || 'ILS').trim().toUpperCase() === 'USD'
+    const currencyRaw = teach.currencyColumn
+      ? rowData[teach.currencyColumn]
+      : (rowData['מטבע'] || rowData['Currency'] || 'ILS')
+    const resolvedExchange = (currencyRaw ?? '').trim().toUpperCase() === 'USD'
       ? teach.exchangeForUsd
       : 'TASE'
     const taughtClassified: ClassifiedRow = {
@@ -504,6 +510,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
       sharesColumn: needsSecurity ? teach.sharesColumn || undefined : undefined,
       priceColumn: needsSecurity ? teach.priceColumn || undefined : undefined,
       amountColumn: needsSecurity ? teach.amountColumn || undefined : undefined,
+      currencyColumn: needsSecurity ? teach.currencyColumn || undefined : undefined,
       exchangeForUsd: needsSecurity ? teach.exchangeForUsd : undefined,
       cashAccountName: teach.cashAccountName || undefined,
       toCashAccountName: teach.toCashAccountName || undefined,
@@ -856,13 +863,18 @@ function TeachDialog({
       sharesColumn: saved?.sharesColumn ?? teach.sharesColumn,
       priceColumn: saved?.priceColumn ?? teach.priceColumn,
       amountColumn: saved?.amountColumn ?? teach.amountColumn,
+      currencyColumn: saved?.currencyColumn ?? teach.currencyColumn,
       exchangeForUsd: (saved?.exchangeForUsd as 'NYSE' | 'NASDAQ') ?? teach.exchangeForUsd,
     })
     setColsLocked(!!saved)
   }
 
-  const rowCurrency = (teach.row.row['מטבע'] || teach.row.row['Currency'] || 'ILS').trim().toUpperCase()
-  const autoExchange = rowCurrency === 'USD' ? teach.exchangeForUsd : 'TASE'
+  // Resolve currency from the designated column (or fallback to known names)
+  const currencyRaw = teach.currencyColumn
+    ? teach.row.row[teach.currencyColumn]
+    : (teach.row.row['מטבע'] || teach.row.row['Currency'] || '')
+  const rowCurrency = (currencyRaw ?? '').trim().toUpperCase()
+  const autoExchange = rowCurrency === 'USD' ? teach.exchangeForUsd : (rowCurrency === 'ILS' ? 'TASE' : '?')
 
   const livePreview: ClassifiedRow | null = teach.transactionType
     ? {
@@ -928,17 +940,19 @@ function TeachDialog({
                 {teach.sharesColumn && <p>כמות ← <span className="font-medium text-foreground">{teach.sharesColumn}</span> = {teach.row.row[teach.sharesColumn] ?? ''}</p>}
                 {teach.priceColumn && <p>מחיר ← <span className="font-medium text-foreground">{teach.priceColumn}</span> = {teach.row.row[teach.priceColumn] ?? ''}</p>}
                 {teach.amountColumn && <p>סכום כולל ← <span className="font-medium text-foreground">{teach.amountColumn}</span> = {teach.row.row[teach.amountColumn] ?? ''}</p>}
-                <p>בורסה ← {autoExchange}</p>
+                {teach.currencyColumn && <p>מטבע ← <span className="font-medium text-foreground">{teach.currencyColumn}</span> = {teach.row.row[teach.currencyColumn] ?? ''}</p>}
+                <p>בורסה ← {autoExchange}{autoExchange === '?' ? ' (לא ניתן לזהות — בחר עמודת מטבע)' : ''}</p>
               </div>
             ) : (
               // Edit view — dropdowns
               <>
-                {(['tickerColumn', 'sharesColumn', 'priceColumn', 'amountColumn'] as const).map(col => {
+                {(['tickerColumn', 'sharesColumn', 'priceColumn', 'amountColumn', 'currencyColumn'] as const).map(col => {
                   const labels: Record<string, string> = {
                     tickerColumn: 'עמודת הטיקר / שם נייר',
                     sharesColumn: 'עמודת כמות',
                     priceColumn: 'עמודת מחיר ליחידה',
                     amountColumn: 'עמודת סכום כולל',
+                    currencyColumn: 'עמודת מטבע (ILS / USD)',
                   }
                   const val = teach[col]
                   return (
@@ -960,7 +974,7 @@ function TeachDialog({
                 })}
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">
-                    בורסה — {rowCurrency === 'USD' ? 'USD זוהה, בחר:' : `${rowCurrency} → TASE אוטומטי`}
+                    בורסה — {rowCurrency === 'USD' ? 'USD זוהה, בחר:' : rowCurrency === 'ILS' ? 'ILS → TASE אוטומטי' : teach.currencyColumn ? 'בחר עמודת מטבע למעלה' : 'לא זוהה מטבע — בחר עמודת מטבע'}
                   </label>
                   {rowCurrency === 'USD' && (
                     <select
@@ -972,7 +986,10 @@ function TeachDialog({
                       <option value="NASDAQ">NASDAQ</option>
                     </select>
                   )}
-                  {rowCurrency !== 'USD' && <p className="text-xs text-muted-foreground">TASE (ת"א)</p>}
+                  {rowCurrency === 'ILS' && <p className="text-xs text-muted-foreground">TASE (ת"א)</p>}
+                  {rowCurrency !== 'USD' && rowCurrency !== 'ILS' && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">יש לבחור עמודת מטבע כדי לקבוע את הבורסה אוטומטית</p>
+                  )}
                 </div>
               </>
             )}

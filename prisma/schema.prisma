@@ -259,6 +259,7 @@ model CsvImportRule {
   sharesColumn      String?  @map("shares_column")
   priceColumn       String?  @map("price_column")
   amountColumn      String?  @map("amount_column")
+  currencyColumn    String?  @map("currency_column")   // column that holds ILS/USD per row
   exchangeForUsd    String?  @map("exchange_for_usd")  // NYSE | NASDAQ when currency=USD
   createdAt         DateTime @default(now()) @map("created_at")
 

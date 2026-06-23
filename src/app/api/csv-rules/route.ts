@@ -34,6 +34,7 @@ const CreateRuleSchema = z.object({
   sharesColumn: z.string().optional(),
   priceColumn: z.string().optional(),
   amountColumn: z.string().optional(),
+  currencyColumn: z.string().optional(),
   exchangeForUsd: z.enum(['NYSE', 'NASDAQ']).optional(),
 })
 
@@ -73,6 +74,7 @@ export async function POST(req: NextRequest) {
       sharesColumn: parsed.data.sharesColumn,
       priceColumn: parsed.data.priceColumn,
       amountColumn: parsed.data.amountColumn,
+      currencyColumn: parsed.data.currencyColumn,
       exchangeForUsd: parsed.data.exchangeForUsd,
     },
   })

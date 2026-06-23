@@ -27,6 +27,7 @@ export interface CsvRule {
   sharesColumn?: string | null
   priceColumn?: string | null
   amountColumn?: string | null
+  currencyColumn?: string | null  // column that holds the row's currency (ILS/USD)
   exchangeForUsd?: string | null  // 'NYSE' | 'NASDAQ' when currency is USD
 }
 
@@ -44,6 +45,7 @@ export interface ClassifiedRow {
   sharesColumn?: string
   priceColumn?: string
   amountColumn?: string
+  currencyColumn?: string
   exchangeForUsd?: string
   ruleId?: string
 }
@@ -69,9 +71,15 @@ function matchesPattern(
 }
 
 // Determine exchange from currency column value
-function resolveExchange(row: Record<string, string>, exchangeForUsd?: string | null): string {
-  const currencyRaw = row['מטבע'] || row['Currency'] || row['currency'] || ''
-  const currency = currencyRaw.trim().toUpperCase()
+function resolveExchange(
+  row: Record<string, string>,
+  exchangeForUsd?: string | null,
+  currencyColumn?: string | null,
+): string {
+  const raw = currencyColumn
+    ? row[currencyColumn]
+    : (row['מטבע'] || row['Currency'] || row['currency'] || '')
+  const currency = (raw ?? '').trim().toUpperCase()
   if (currency === 'USD') return exchangeForUsd || 'NYSE'
   return 'TASE'
 }
@@ -84,7 +92,7 @@ function classifiedFromRule(row: Record<string, string>, rule: CsvRule): Omit<Cl
 
   // Resolve exchange from currency if column mappings are used, else use static
   const exchange = rule.tickerColumn
-    ? resolveExchange(row, rule.exchangeForUsd)
+    ? resolveExchange(row, rule.exchangeForUsd, rule.currencyColumn)
     : (rule.exchange ?? undefined)
 
   return {
@@ -98,6 +106,7 @@ function classifiedFromRule(row: Record<string, string>, rule: CsvRule): Omit<Cl
     sharesColumn: rule.sharesColumn ?? undefined,
     priceColumn: rule.priceColumn ?? undefined,
     amountColumn: rule.amountColumn ?? undefined,
+    currencyColumn: rule.currencyColumn ?? undefined,
     exchangeForUsd: rule.exchangeForUsd ?? undefined,
     ruleId: rule.id,
   }

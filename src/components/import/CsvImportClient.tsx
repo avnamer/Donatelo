@@ -209,7 +209,25 @@ function interpretRow(c: ClassifiedRow): Interpretation {
     if (!amount) warnings.push('סכום עמלה לא נמצא')
     return {
       understood: `עמלה: ${fmt(amount, currency)}`,
-      willDo: `יוצר רשומת COMMISSION — סכום זה יופיע בסיכום העמלות בדף הפעילות`,
+      willDo: `יוצר רשומת COMMISSION — יופיע בסיכום העמלות בדף הפעילות`,
+      warnings,
+    }
+  }
+
+  if (c.type === 'TAX_ILS') {
+    if (!amount) warnings.push('סכום מס לא נמצא')
+    return {
+      understood: `מס בשקלים: ${fmt(amount, 'ILS')}`,
+      willDo: `יוצר רשומת TAX_ILS — יופיע בסיכום המיסים בדף הפעילות`,
+      warnings,
+    }
+  }
+
+  if (c.type === 'TAX_USD') {
+    if (!amount) warnings.push('סכום מס לא נמצא')
+    return {
+      understood: `מס בדולרים: ${fmt(amount, 'USD')}`,
+      willDo: `יוצר רשומת TAX_USD — יופיע בסיכום המיסים בדף הפעילות`,
       warnings,
     }
   }
@@ -253,6 +271,8 @@ const TX_TYPE_LABELS: Record<CsvTransactionType, string> = {
   SECURITY_BUY: 'קניית ני"ע',
   SECURITY_SELL: 'מכירת ני"ע',
   DIVIDEND: 'דיבידנד',
+  TAX_ILS: 'מס בשקלים',
+  TAX_USD: 'מס בדולרים',
   CASH_DEPOSIT: 'הפקדה',
   CASH_WITHDRAWAL: 'משיכה',
   FX_CONVERSION: 'המרת מט"ח (ILS → USD)',
@@ -262,7 +282,8 @@ const TX_TYPE_LABELS: Record<CsvTransactionType, string> = {
 
 const TX_TYPE_OPTIONS: CsvTransactionType[] = [
   'SECURITY_BUY', 'SECURITY_SELL', 'DIVIDEND',
-  'CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'FX_CONVERSION', 'COMMISSION', 'IGNORE',
+  'CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'FX_CONVERSION',
+  'COMMISSION', 'TAX_ILS', 'TAX_USD', 'IGNORE',
 ]
 
 // ─── Sub-components ───────────────────────────────
@@ -527,6 +548,8 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
           case 'CASH_WITHDRAWAL': return { type: 'CASH_WITHDRAWAL', date, amount, currency, cashAccountName: c.cashAccountName || 'מזומן ₪' }
           case 'FX_CONVERSION': return { type: 'FX_CONVERSION', date, ilsAmount: amount, ilsCashAccountName: c.cashAccountName || 'מזומן ₪', usdAmount, usdCashAccountName: c.toCashAccountName || 'מזומן $' }
           case 'COMMISSION': return { type: 'COMMISSION', date, amount, currency }
+          case 'TAX_ILS': return { type: 'TAX_ILS', date, amount }
+          case 'TAX_USD': return { type: 'TAX_USD', date, amount }
         }
       })
   }

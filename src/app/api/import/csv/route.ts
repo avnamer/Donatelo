@@ -60,6 +60,18 @@ const ClassifiedTxSchema = z.discriminatedUnion('type', [
     notes: z.string().optional(),
   }),
   z.object({
+    type: z.literal('TAX_ILS'),
+    date: z.string(),
+    amount: z.number().positive(),
+    notes: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('TAX_USD'),
+    date: z.string(),
+    amount: z.number().positive(),
+    notes: z.string().optional(),
+  }),
+  z.object({
     type: z.literal('FX_CONVERSION'),
     date: z.string(),
     // ILS side
@@ -335,6 +347,22 @@ async function processTransaction(
         currency: tx.currency,
         notes: tx.notes,
       },
+    })
+    return 'ok'
+  }
+
+  if (tx.type === 'TAX_ILS') {
+    const amount = BigInt(Math.round(tx.amount * 100))
+    await prisma.transaction.create({
+      data: { portfolioId, type: 'TAX_ILS', date, amount, currency: 'ILS', notes: tx.notes },
+    })
+    return 'ok'
+  }
+
+  if (tx.type === 'TAX_USD') {
+    const amount = BigInt(Math.round(tx.amount * 100))
+    await prisma.transaction.create({
+      data: { portfolioId, type: 'TAX_USD', date, amount, currency: 'USD', notes: tx.notes },
     })
     return 'ok'
   }

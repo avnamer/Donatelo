@@ -8,6 +8,8 @@ export type CsvTransactionType =
   | 'CASH_WITHDRAWAL'
   | 'FX_CONVERSION'  // ILS → USD (or reverse)
   | 'COMMISSION'
+  | 'TAX_ILS'
+  | 'TAX_USD'
   | 'IGNORE'
 
 export interface CsvRule {

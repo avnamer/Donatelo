@@ -95,6 +95,23 @@ type ColumnHints = {
   sharesColumn?: string
   priceColumn?: string
   amountColumn?: string
+  currencyColumn?: string
+}
+
+// Guess column mappings from column names in the row
+function guessColumns(row: Record<string, string>) {
+  const keys = Object.keys(row)
+  const find = (...candidates: string[]) =>
+    candidates.find(c => keys.some(k => k === c || k.includes(c))) &&
+    keys.find(k => candidates.some(c => k === c || k.includes(c))) || ''
+
+  return {
+    tickerColumn:   find('שם נייר', 'שם', 'ticker', 'Ticker', 'Symbol', 'symbol', 'נייר'),
+    sharesColumn:   find('כמות', 'מניות', 'Quantity', 'quantity', 'shares'),
+    priceColumn:    find('שער ביצוע', 'מחיר', 'שער', 'Price', 'price'),
+    amountColumn:   find('שווי', 'סכום', 'Amount', 'amount', 'ערך', 'נטו'),
+    currencyColumn: find('מטבע', 'Currency', 'currency'),
+  }
 }
 
 function parseNum(raw: string) {
@@ -112,7 +129,9 @@ function extractFields(row: Record<string, string>, hints?: ColumnHints) {
     ?? row['שווי'] ?? row['סכום'] ?? row['Amount'] ?? row['amount'] ?? row['ערך'] ?? ''
 
   const usdAmountRaw = row['סכום מטבע'] || row['סכום דולרים'] || ''
-  const currency = (row['מטבע'] || row['Currency'] || 'ILS').trim().toUpperCase() as 'ILS' | 'USD'
+  const currencyRaw = (hints?.currencyColumn ? row[hints.currencyColumn] : null)
+    ?? row['מטבע'] ?? row['Currency'] ?? 'ILS'
+  const currency = currencyRaw.trim().toUpperCase() as 'ILS' | 'USD'
 
   return {
     date,
@@ -437,14 +456,15 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
 
   function startTeach(u: UnknownRow) {
     const fields = Object.entries(u.row).filter(([, v]) => v.trim()).map(([k]) => k)
+    const guessed = guessColumns(u.row)
     setTeach({
       row: u,
       transactionType: '',
-      tickerColumn: fields[0] ?? '',
-      sharesColumn: fields[0] ?? '',
-      priceColumn: fields[0] ?? '',
-      amountColumn: fields[0] ?? '',
-      currencyColumn: '',
+      tickerColumn: guessed.tickerColumn,
+      sharesColumn: guessed.sharesColumn,
+      priceColumn: guessed.priceColumn,
+      amountColumn: guessed.amountColumn,
+      currencyColumn: guessed.currencyColumn,
       exchangeForUsd: 'NYSE',
       cashAccountName: 'מזומן ₪',
       toCashAccountName: 'מזומן $',
@@ -464,20 +484,21 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
     )
 
     const needsSecurity = ['SECURITY_BUY', 'SECURITY_SELL', 'DIVIDEND'].includes(teach.transactionType)
+    const needsAmount = !['IGNORE', 'FX_CONVERSION'].includes(teach.transactionType)
     const res = await fetch('/api/csv-rules', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         pattern,
         transactionType: teach.transactionType,
-        // Security types use column mappings
+        // Security types: full column mappings
         tickerColumn: needsSecurity ? teach.tickerColumn || undefined : undefined,
         sharesColumn: needsSecurity ? teach.sharesColumn || undefined : undefined,
         priceColumn: needsSecurity ? teach.priceColumn || undefined : undefined,
-        amountColumn: needsSecurity ? teach.amountColumn || undefined : undefined,
-        currencyColumn: needsSecurity ? teach.currencyColumn || undefined : undefined,
+        // All types that have an amount: save amountColumn + currencyColumn
+        amountColumn: needsAmount ? teach.amountColumn || undefined : undefined,
+        currencyColumn: needsAmount ? teach.currencyColumn || undefined : undefined,
         exchangeForUsd: needsSecurity ? teach.exchangeForUsd : undefined,
-        // Cash types use static account names
         cashAccountName: teach.cashAccountName || undefined,
         toCashAccountName: teach.toCashAccountName || undefined,
         notes: teach.notes || undefined,
@@ -509,8 +530,8 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
       tickerColumn: needsSecurity ? teach.tickerColumn || undefined : undefined,
       sharesColumn: needsSecurity ? teach.sharesColumn || undefined : undefined,
       priceColumn: needsSecurity ? teach.priceColumn || undefined : undefined,
-      amountColumn: needsSecurity ? teach.amountColumn || undefined : undefined,
-      currencyColumn: needsSecurity ? teach.currencyColumn || undefined : undefined,
+      amountColumn: needsAmount ? teach.amountColumn || undefined : undefined,
+      currencyColumn: needsAmount ? teach.currencyColumn || undefined : undefined,
       exchangeForUsd: needsSecurity ? teach.exchangeForUsd : undefined,
       cashAccountName: teach.cashAccountName || undefined,
       toCashAccountName: teach.toCashAccountName || undefined,
@@ -542,7 +563,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
       .sort((a, b) => a.index - b.index)
       .map(c => {
         if (c.type === 'IGNORE') return { type: 'IGNORE', date: undefined }
-        const hints = { sharesColumn: c.sharesColumn, priceColumn: c.priceColumn, amountColumn: c.amountColumn }
+        const hints = { sharesColumn: c.sharesColumn, priceColumn: c.priceColumn, amountColumn: c.amountColumn, currencyColumn: c.currencyColumn }
         const { date, shares, price, amount, usdAmount, currency } = extractFields(c.row, hints)
         const effectivePrice = price || (shares > 0 ? amount / shares : 0)
         const ticker = (c.tickerColumn ? (c.row[c.tickerColumn] ?? '').trim() : c.ticker) || ''
@@ -993,6 +1014,33 @@ function TeachDialog({
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* Amount + currency column selectors for non-security types */}
+        {!needsSecurity && !needsFx && teach.transactionType !== '' && teach.transactionType !== 'IGNORE' && (
+          <div className="rounded-lg bg-muted/40 p-3 space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground">מיפוי עמודות</p>
+            {(['amountColumn', 'currencyColumn'] as const).map(col => {
+              const labels = { amountColumn: 'עמודת סכום', currencyColumn: 'עמודת מטבע (ILS / USD)' }
+              const val = teach[col]
+              return (
+                <div key={col} className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">{labels[col]}</label>
+                  <select
+                    className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
+                    value={val}
+                    onChange={e => onChange({ ...teach, [col]: e.target.value })}
+                  >
+                    <option value="">— לא רלוונטי —</option>
+                    {fields.map(([k, v]) => (
+                      <option key={k} value={k}>{k} = {v.slice(0, 25)}</option>
+                    ))}
+                  </select>
+                  {val && <p className="text-xs text-muted-foreground">ערך בשורה זו: {teach.row.row[val] ?? ''}</p>}
+                </div>
+              )
+            })}
           </div>
         )}
 

@@ -132,7 +132,8 @@ function extractFields(row: Record<string, string>, hints?: ColumnHints) {
   const currencyRaw = (hints?.currencyColumn ? row[hints.currencyColumn] : null)
     ?? row['מטבע'] ?? row['Currency'] ?? 'ILS'
   const currencyNormalized = currencyRaw.trim().toUpperCase()
-  const currency = (currencyNormalized === '$' ? 'USD' : currencyNormalized === '₪' ? 'ILS' : currencyNormalized) as 'ILS' | 'USD'
+  const ILS_VARIANTS = ['ILS', '₪', 'שח', 'ש"ח', "ש'ח"]
+  const currency = (currencyNormalized === '$' ? 'USD' : ILS_VARIANTS.includes(currencyNormalized) ? 'ILS' : currencyNormalized) as 'ILS' | 'USD'
 
   return {
     date,
@@ -524,6 +525,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
     const currencyNorm = (currencyRaw ?? '').trim().toUpperCase()
     const resolvedExchange = teach.exchangeOverride
       || ((currencyNorm === 'USD' || currencyNorm === '$') ? teach.exchangeForUsd : 'TASE')
+
     const taughtClassified: ClassifiedRow = {
       index: teach.row.index,
       row: rowData,
@@ -899,7 +901,8 @@ function TeachDialog({
     ? teach.row.row[teach.currencyColumn]
     : (teach.row.row['מטבע'] || teach.row.row['Currency'] || '')
   const rawNorm = (currencyRaw ?? '').trim().toUpperCase()
-  const rowCurrency = rawNorm === '$' ? 'USD' : rawNorm === '₪' ? 'ILS' : rawNorm
+  const ILS_VARIANTS = ['ILS', '₪', 'שח', 'ש"ח', "ש'ח"]
+  const rowCurrency = rawNorm === '$' ? 'USD' : ILS_VARIANTS.includes(rawNorm) ? 'ILS' : rawNorm
   const detectedExchange = rowCurrency === 'USD' ? teach.exchangeForUsd : (rowCurrency === 'ILS' ? 'TASE' : '')
   const autoExchange = teach.exchangeOverride || detectedExchange || '?'
 

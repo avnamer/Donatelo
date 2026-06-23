@@ -81,6 +81,7 @@ function resolveExchange(
     : (row['מטבע'] || row['Currency'] || row['currency'] || '')
   const currency = (raw ?? '').trim().toUpperCase()
   if (currency === 'USD' || currency === '$') return exchangeForUsd || 'NYSE'
+  if (['ILS', '₪', 'שח', 'ש"ח', "ש'ח"].includes(currency)) return 'TASE'
   return 'TASE'
 }
 

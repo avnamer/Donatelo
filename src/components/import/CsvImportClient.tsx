@@ -51,6 +51,43 @@ function parseCsv(text: string): Record<string, string>[] {
   })
 }
 
+// ─── Encoding-aware file reader ───────────────────
+// Israeli brokers export Windows-1255; f.text() assumes UTF-8 → gibberish.
+// Strategy: decode as UTF-8 first; if no Hebrew Unicode chars found, retry as Windows-1255.
+
+function hasHebrew(text: string) {
+  return /[א-ת]/.test(text)
+}
+
+async function readCsvWithEncoding(f: File): Promise<string> {
+  const buf = await f.arrayBuffer()
+
+  // Check for UTF-8 BOM (EF BB BF)
+  const bytes = new Uint8Array(buf)
+  const hasBom = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF
+
+  const utf8 = new TextDecoder('utf-8').decode(buf)
+  if (hasBom || hasHebrew(utf8)) return utf8
+
+  // No Hebrew in UTF-8 → try Windows-1255 (common for Israeli brokers)
+  try {
+    const win1255 = new TextDecoder('windows-1255').decode(buf)
+    if (hasHebrew(win1255)) return win1255
+  } catch {
+    // windows-1255 not supported in this browser — fall through
+  }
+
+  // Try ISO-8859-8 (another Hebrew encoding)
+  try {
+    const iso = new TextDecoder('iso-8859-8').decode(buf)
+    if (hasHebrew(iso)) return iso
+  } catch {
+    // not supported — fall through
+  }
+
+  return utf8 // best effort
+}
+
 // ─── Field extraction (shared between interpretation & payload) ──
 
 function extractFields(row: Record<string, string>) {
@@ -311,7 +348,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
 
   async function handleFile(f: File) {
     if (!f.name.endsWith('.csv')) { setErrorMsg('אנא העלה קובץ CSV'); return }
-    const text = await f.text()
+    const text = await readCsvWithEncoding(f)
     const rows = parseCsv(text)
     if (rows.length === 0) { setErrorMsg('הקובץ ריק או לא תקין'); return }
     setAllRows(rows)

@@ -80,7 +80,7 @@ function resolveExchange(
     ? row[currencyColumn]
     : (row['מטבע'] || row['Currency'] || row['currency'] || '')
   const currency = (raw ?? '').trim().toUpperCase()
-  if (currency === 'USD') return exchangeForUsd || 'NYSE'
+  if (currency === 'USD' || currency === '$') return exchangeForUsd || 'NYSE'
   return 'TASE'
 }
 

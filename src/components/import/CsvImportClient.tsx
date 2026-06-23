@@ -131,7 +131,8 @@ function extractFields(row: Record<string, string>, hints?: ColumnHints) {
   const usdAmountRaw = row['סכום מטבע'] || row['סכום דולרים'] || ''
   const currencyRaw = (hints?.currencyColumn ? row[hints.currencyColumn] : null)
     ?? row['מטבע'] ?? row['Currency'] ?? 'ILS'
-  const currency = currencyRaw.trim().toUpperCase() as 'ILS' | 'USD'
+  const currencyNormalized = currencyRaw.trim().toUpperCase()
+  const currency = (currencyNormalized === '$' ? 'USD' : currencyNormalized === '₪' ? 'ILS' : currencyNormalized) as 'ILS' | 'USD'
 
   return {
     date,
@@ -280,6 +281,7 @@ interface TeachState {
   amountColumn: string       // which column holds total amount
   currencyColumn: string     // which column holds the row currency (ILS/USD)
   exchangeForUsd: 'NYSE' | 'NASDAQ'
+  exchangeOverride: string   // manual override; '' = use auto-detection
   // Cash / FX
   cashAccountName: string
   toCashAccountName: string
@@ -466,6 +468,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
       amountColumn: guessed.amountColumn,
       currencyColumn: guessed.currencyColumn,
       exchangeForUsd: 'NYSE',
+      exchangeOverride: '',
       cashAccountName: 'מזומן ₪',
       toCashAccountName: 'מזומן $',
       chosenField: fields[0] ? { field: fields[0], matchType: 'equals' } : null,
@@ -518,9 +521,9 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
     const currencyRaw = teach.currencyColumn
       ? rowData[teach.currencyColumn]
       : (rowData['מטבע'] || rowData['Currency'] || 'ILS')
-    const resolvedExchange = (currencyRaw ?? '').trim().toUpperCase() === 'USD'
-      ? teach.exchangeForUsd
-      : 'TASE'
+    const currencyNorm = (currencyRaw ?? '').trim().toUpperCase()
+    const resolvedExchange = teach.exchangeOverride
+      || ((currencyNorm === 'USD' || currencyNorm === '$') ? teach.exchangeForUsd : 'TASE')
     const taughtClassified: ClassifiedRow = {
       index: teach.row.index,
       row: rowData,
@@ -886,6 +889,7 @@ function TeachDialog({
       amountColumn: saved?.amountColumn ?? teach.amountColumn,
       currencyColumn: saved?.currencyColumn ?? teach.currencyColumn,
       exchangeForUsd: (saved?.exchangeForUsd as 'NYSE' | 'NASDAQ') ?? teach.exchangeForUsd,
+      exchangeOverride: '',
     })
     setColsLocked(!!saved)
   }
@@ -894,8 +898,10 @@ function TeachDialog({
   const currencyRaw = teach.currencyColumn
     ? teach.row.row[teach.currencyColumn]
     : (teach.row.row['מטבע'] || teach.row.row['Currency'] || '')
-  const rowCurrency = (currencyRaw ?? '').trim().toUpperCase()
-  const autoExchange = rowCurrency === 'USD' ? teach.exchangeForUsd : (rowCurrency === 'ILS' ? 'TASE' : '?')
+  const rawNorm = (currencyRaw ?? '').trim().toUpperCase()
+  const rowCurrency = rawNorm === '$' ? 'USD' : rawNorm === '₪' ? 'ILS' : rawNorm
+  const detectedExchange = rowCurrency === 'USD' ? teach.exchangeForUsd : (rowCurrency === 'ILS' ? 'TASE' : '')
+  const autoExchange = teach.exchangeOverride || detectedExchange || '?'
 
   const livePreview: ClassifiedRow | null = teach.transactionType
     ? {
@@ -995,22 +1001,26 @@ function TeachDialog({
                 })}
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">
-                    בורסה — {rowCurrency === 'USD' ? 'USD זוהה, בחר:' : rowCurrency === 'ILS' ? 'ILS → TASE אוטומטי' : teach.currencyColumn ? 'בחר עמודת מטבע למעלה' : 'לא זוהה מטבע — בחר עמודת מטבע'}
+                    בורסה
+                    {rowCurrency === 'USD' && !teach.exchangeOverride && <span className="mr-1 text-blue-500 text-[10px]">($/{rowCurrency} → {detectedExchange})</span>}
+                    {rowCurrency === 'ILS' && !teach.exchangeOverride && <span className="mr-1 text-[10px] text-muted-foreground">(ILS/₪ → TASE)</span>}
+                    {!rowCurrency && !teach.exchangeOverride && <span className="mr-1 text-amber-500 text-[10px]">(מטבע לא זוהה)</span>}
                   </label>
-                  {rowCurrency === 'USD' && (
-                    <select
-                      className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
-                      value={teach.exchangeForUsd}
-                      onChange={e => onChange({ ...teach, exchangeForUsd: e.target.value as 'NYSE' | 'NASDAQ' })}
-                    >
-                      <option value="NYSE">NYSE</option>
-                      <option value="NASDAQ">NASDAQ</option>
-                    </select>
-                  )}
-                  {rowCurrency === 'ILS' && <p className="text-xs text-muted-foreground">TASE (ת"א)</p>}
-                  {rowCurrency !== 'USD' && rowCurrency !== 'ILS' && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">יש לבחור עמודת מטבע כדי לקבוע את הבורסה אוטומטית</p>
-                  )}
+                  <select
+                    className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
+                    value={teach.exchangeOverride || detectedExchange || ''}
+                    onChange={e => {
+                      const v = e.target.value
+                      // If user picks the same as auto-detected, clear override
+                      onChange({ ...teach, exchangeOverride: v === detectedExchange ? '' : v, exchangeForUsd: (v === 'NYSE' || v === 'NASDAQ') ? v as 'NYSE' | 'NASDAQ' : teach.exchangeForUsd })
+                    }}
+                  >
+                    {!detectedExchange && <option value="">— בחר בורסה —</option>}
+                    <option value="TASE">TASE — תל אביב</option>
+                    <option value="NYSE">NYSE — ניו יורק</option>
+                    <option value="NASDAQ">NASDAQ</option>
+                  </select>
+                  {teach.exchangeOverride && <p className="text-xs text-primary">בורסה שונתה ידנית ל-{teach.exchangeOverride}</p>}
                 </div>
               </>
             )}

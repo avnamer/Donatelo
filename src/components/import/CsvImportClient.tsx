@@ -180,6 +180,15 @@ function interpretRow(c: ClassifiedRow): Interpretation {
     }
   }
 
+  if (c.type === 'COMMISSION') {
+    if (!amount) warnings.push('סכום עמלה לא נמצא')
+    return {
+      understood: `עמלה: ${fmt(amount, currency)}`,
+      willDo: `יוצר רשומת COMMISSION — סכום זה יופיע בסיכום העמלות בדף הפעילות`,
+      warnings,
+    }
+  }
+
   if (c.type === 'FX_CONVERSION') {
     if (!amount) warnings.push('סכום ILS לא נמצא')
     if (!usdAmount) warnings.push('סכום USD לא נמצא — ייתכן שנדרש עמודה "סכום מטבע"')
@@ -217,12 +226,13 @@ const TX_TYPE_LABELS: Record<CsvTransactionType, string> = {
   CASH_DEPOSIT: 'הפקדה',
   CASH_WITHDRAWAL: 'משיכה',
   FX_CONVERSION: 'המרת מט"ח (ILS → USD)',
+  COMMISSION: 'עמלה',
   IGNORE: 'התעלם מהשורה',
 }
 
 const TX_TYPE_OPTIONS: CsvTransactionType[] = [
   'SECURITY_BUY', 'SECURITY_SELL', 'DIVIDEND',
-  'CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'FX_CONVERSION', 'IGNORE',
+  'CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'FX_CONVERSION', 'COMMISSION', 'IGNORE',
 ]
 
 // ─── Sub-components ───────────────────────────────
@@ -235,6 +245,7 @@ function Badge({ type }: { type: CsvTransactionType }) {
     CASH_DEPOSIT: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
     CASH_WITHDRAWAL: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
     FX_CONVERSION: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+    COMMISSION: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
     IGNORE: 'bg-muted text-muted-foreground',
   }
   return (
@@ -464,6 +475,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
           case 'CASH_DEPOSIT': return { type: 'CASH_DEPOSIT', date, amount, currency, cashAccountName: c.cashAccountName || 'מזומן ₪' }
           case 'CASH_WITHDRAWAL': return { type: 'CASH_WITHDRAWAL', date, amount, currency, cashAccountName: c.cashAccountName || 'מזומן ₪' }
           case 'FX_CONVERSION': return { type: 'FX_CONVERSION', date, ilsAmount: amount, ilsCashAccountName: c.cashAccountName || 'מזומן ₪', usdAmount, usdCashAccountName: c.toCashAccountName || 'מזומן $' }
+          case 'COMMISSION': return { type: 'COMMISSION', date, amount, currency }
         }
       })
   }

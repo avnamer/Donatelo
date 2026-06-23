@@ -53,6 +53,13 @@ const ClassifiedTxSchema = z.discriminatedUnion('type', [
     notes: z.string().optional(),
   }),
   z.object({
+    type: z.literal('COMMISSION'),
+    date: z.string(),
+    amount: z.number().positive(),
+    currency: z.enum(['ILS', 'USD']),
+    notes: z.string().optional(),
+  }),
+  z.object({
     type: z.literal('FX_CONVERSION'),
     date: z.string(),
     // ILS side
@@ -313,6 +320,21 @@ async function processTransaction(
     await prisma.cashAccount.update({
       where: { id: usdId },
       data: { balance: { increment: usdAmount } },
+    })
+    return 'ok'
+  }
+
+  if (tx.type === 'COMMISSION') {
+    const amount = BigInt(Math.round(tx.amount * 100))
+    await prisma.transaction.create({
+      data: {
+        portfolioId,
+        type: 'COMMISSION',
+        date,
+        amount,
+        currency: tx.currency,
+        notes: tx.notes,
+      },
     })
     return 'ok'
   }

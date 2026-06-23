@@ -20,6 +20,7 @@ const CreateRuleSchema = z.object({
     'CASH_DEPOSIT',
     'CASH_WITHDRAWAL',
     'FX_CONVERSION',
+    'COMMISSION',
     'IGNORE',
   ]),
   ticker: z.string().optional(),

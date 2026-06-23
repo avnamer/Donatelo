@@ -701,6 +701,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
             onSave={saveRule}
             onClose={() => setTeach(null)}
             saving={savingRule}
+            existingRules={rules}
           />
         )}
       </div>
@@ -799,52 +800,47 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
 
 // ─── Teach dialog ─────────────────────────────────
 
-function ColSelect({
-  label, value, fields, onChange, hint,
-}: {
-  label: string
-  value: string
-  fields: [string, string][]
-  onChange: (v: string) => void
-  hint?: string
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs font-medium text-muted-foreground">{label}</label>
-      <select
-        className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-      >
-        <option value="">— לא רלוונטי —</option>
-        {fields.map(([k, v]) => (
-          <option key={k} value={k}>{k} = {v.slice(0, 30)}</option>
-        ))}
-      </select>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  )
-}
-
 function TeachDialog({
-  teach, onChange, onSave, onClose, saving,
+  teach, onChange, onSave, onClose, saving, existingRules,
 }: {
   teach: TeachState
   onChange: (t: TeachState) => void
   onSave: () => void
   onClose: () => void
   saving: boolean
+  existingRules: CsvRule[]
 }) {
   const fields = Object.entries(teach.row.row).filter(([, v]) => v.trim())
   const needsSecurity = ['SECURITY_BUY', 'SECURITY_SELL', 'DIVIDEND'].includes(teach.transactionType)
   const needsFx = teach.transactionType === 'FX_CONVERSION'
   const needsCash = ['CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'DIVIDEND'].includes(teach.transactionType)
 
-  // Resolved currency from this row (for exchange auto-label)
+  // Find saved column settings for this transaction type
+  const savedCols = existingRules.find(
+    r => r.transactionType === teach.transactionType && (r.tickerColumn || r.sharesColumn || r.priceColumn)
+  )
+  const [colsLocked, setColsLocked] = useState(!!savedCols)
+
+  // Auto-fill columns when transaction type changes and a saved setting exists
+  const handleTypeChange = (newType: string) => {
+    const saved = existingRules.find(
+      r => r.transactionType === newType && (r.tickerColumn || r.sharesColumn || r.priceColumn)
+    )
+    onChange({
+      ...teach,
+      transactionType: newType as CsvTransactionType,
+      tickerColumn: saved?.tickerColumn ?? teach.tickerColumn,
+      sharesColumn: saved?.sharesColumn ?? teach.sharesColumn,
+      priceColumn: saved?.priceColumn ?? teach.priceColumn,
+      amountColumn: saved?.amountColumn ?? teach.amountColumn,
+      exchangeForUsd: (saved?.exchangeForUsd as 'NYSE' | 'NASDAQ') ?? teach.exchangeForUsd,
+    })
+    setColsLocked(!!saved)
+  }
+
   const rowCurrency = (teach.row.row['מטבע'] || teach.row.row['Currency'] || 'ILS').trim().toUpperCase()
   const autoExchange = rowCurrency === 'USD' ? teach.exchangeForUsd : 'TASE'
 
-  // Live preview
   const livePreview: ClassifiedRow | null = teach.transactionType
     ? {
         index: teach.row.index,
@@ -879,7 +875,7 @@ function TeachDialog({
           <select
             className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
             value={teach.transactionType}
-            onChange={e => onChange({ ...teach, transactionType: e.target.value as CsvTransactionType })}
+            onChange={e => handleTypeChange(e.target.value)}
           >
             <option value="">בחר…</option>
             {TX_TYPE_OPTIONS.map(t => (
@@ -891,54 +887,72 @@ function TeachDialog({
         {/* Security column mappings */}
         {needsSecurity && (
           <div className="rounded-lg bg-muted/40 p-3 space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground">מיפוי עמודות (המערכת תקרא מכאן לכל שורה)</p>
-            <ColSelect
-              label="עמודת הטיקר / שם נייר"
-              value={teach.tickerColumn}
-              fields={fields}
-              onChange={v => onChange({ ...teach, tickerColumn: v })}
-              hint={teach.tickerColumn ? `ערך בשורה זו: "${teach.row.row[teach.tickerColumn] ?? ''}"` : undefined}
-            />
-            <ColSelect
-              label="עמודת כמות"
-              value={teach.sharesColumn}
-              fields={fields}
-              onChange={v => onChange({ ...teach, sharesColumn: v })}
-              hint={teach.sharesColumn ? `ערך: ${teach.row.row[teach.sharesColumn] ?? ''}` : undefined}
-            />
-            <ColSelect
-              label="עמודת מחיר ליחידה"
-              value={teach.priceColumn}
-              fields={fields}
-              onChange={v => onChange({ ...teach, priceColumn: v })}
-              hint={teach.priceColumn ? `ערך: ${teach.row.row[teach.priceColumn] ?? ''}` : undefined}
-            />
-            <ColSelect
-              label="עמודת סכום כולל"
-              value={teach.amountColumn}
-              fields={fields}
-              onChange={v => onChange({ ...teach, amountColumn: v })}
-              hint={teach.amountColumn ? `ערך: ${teach.row.row[teach.amountColumn] ?? ''}` : undefined}
-            />
-            {/* Exchange — auto from currency, but let user pick NYSE/NASDAQ for USD */}
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">
-                בורסה — {rowCurrency === 'USD' ? 'מטבע USD זוהה' : `מטבע ${rowCurrency} → TASE אוטומטי`}
-              </label>
-              {rowCurrency === 'USD' && (
-                <select
-                  className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
-                  value={teach.exchangeForUsd}
-                  onChange={e => onChange({ ...teach, exchangeForUsd: e.target.value as 'NYSE' | 'NASDAQ' })}
-                >
-                  <option value="NYSE">NYSE</option>
-                  <option value="NASDAQ">NASDAQ</option>
-                </select>
-              )}
-              {rowCurrency !== 'USD' && (
-                <p className="text-xs text-muted-foreground">TASE (ת"א)</p>
-              )}
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground">
+                מיפוי עמודות
+                {colsLocked && <span className="mr-1 text-green-600 dark:text-green-400">✓ נשמר</span>}
+              </p>
+              {colsLocked
+                ? <button onClick={() => setColsLocked(false)} className="text-xs text-primary underline">ערוך</button>
+                : savedCols && <button onClick={() => setColsLocked(true)} className="text-xs text-muted-foreground underline">בטל עריכה</button>
+              }
             </div>
+
+            {colsLocked ? (
+              // Locked view — shows saved values read-only
+              <div className="space-y-1 text-xs text-muted-foreground">
+                {teach.tickerColumn && <p>טיקר ← <span className="font-medium text-foreground">{teach.tickerColumn}</span> = "{(teach.row.row[teach.tickerColumn] ?? '').trim()}"</p>}
+                {teach.sharesColumn && <p>כמות ← <span className="font-medium text-foreground">{teach.sharesColumn}</span> = {teach.row.row[teach.sharesColumn] ?? ''}</p>}
+                {teach.priceColumn && <p>מחיר ← <span className="font-medium text-foreground">{teach.priceColumn}</span> = {teach.row.row[teach.priceColumn] ?? ''}</p>}
+                {teach.amountColumn && <p>סכום כולל ← <span className="font-medium text-foreground">{teach.amountColumn}</span> = {teach.row.row[teach.amountColumn] ?? ''}</p>}
+                <p>בורסה ← {autoExchange}</p>
+              </div>
+            ) : (
+              // Edit view — dropdowns
+              <>
+                {(['tickerColumn', 'sharesColumn', 'priceColumn', 'amountColumn'] as const).map(col => {
+                  const labels: Record<string, string> = {
+                    tickerColumn: 'עמודת הטיקר / שם נייר',
+                    sharesColumn: 'עמודת כמות',
+                    priceColumn: 'עמודת מחיר ליחידה',
+                    amountColumn: 'עמודת סכום כולל',
+                  }
+                  const val = teach[col]
+                  return (
+                    <div key={col} className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">{labels[col]}</label>
+                      <select
+                        className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
+                        value={val}
+                        onChange={e => onChange({ ...teach, [col]: e.target.value })}
+                      >
+                        <option value="">— לא רלוונטי —</option>
+                        {fields.map(([k, v]) => (
+                          <option key={k} value={k}>{k} = {v.slice(0, 25)}</option>
+                        ))}
+                      </select>
+                      {val && <p className="text-xs text-muted-foreground">ערך בשורה זו: {teach.row.row[val] ?? ''}</p>}
+                    </div>
+                  )
+                })}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    בורסה — {rowCurrency === 'USD' ? 'USD זוהה, בחר:' : `${rowCurrency} → TASE אוטומטי`}
+                  </label>
+                  {rowCurrency === 'USD' && (
+                    <select
+                      className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
+                      value={teach.exchangeForUsd}
+                      onChange={e => onChange({ ...teach, exchangeForUsd: e.target.value as 'NYSE' | 'NASDAQ' })}
+                    >
+                      <option value="NYSE">NYSE</option>
+                      <option value="NASDAQ">NASDAQ</option>
+                    </select>
+                  )}
+                  {rowCurrency !== 'USD' && <p className="text-xs text-muted-foreground">TASE (ת"א)</p>}
+                </div>
+              </>
+            )}
           </div>
         )}
 

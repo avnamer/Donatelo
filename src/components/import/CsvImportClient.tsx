@@ -524,6 +524,9 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
           <Upload className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
           <p className="font-medium text-sm">גרור קובץ CSV לכאן</p>
           <p className="text-xs text-muted-foreground mt-1">או לחץ לבחירה</p>
+          <p className="text-xs text-muted-foreground mt-3 border-t pt-3">
+            💡 לייצוא מ-Excel: <span className="font-medium">שמור בשם → CSV UTF-8 (מופרד בפסיקים)</span>
+          </p>
           <input ref={inputRef} type="file" accept=".csv" className="hidden" onChange={onFileChange} />
         </div>
       </div>

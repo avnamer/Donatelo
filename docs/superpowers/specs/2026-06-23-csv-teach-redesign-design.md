@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-23
 **File touched:** `src/components/import/CsvImportClient.tsx` (and `src/lib/csv/classifier.ts` for shared helpers)
-**Data model:** unchanged — `CsvImportRule` stays as-is. All new detection happens client-side before save.
+**Data model:** one small additive column — `CsvImportRule.nameColumn` (`name_column`, nullable). Holds the security-NAME column used as the ticker fallback for foreign securities. Everything else unchanged. All other detection happens client-side before save.
 
 ## Problem
 
@@ -79,6 +79,25 @@ Priority order (critical — dividend/tax/commission MUST precede deposit/withdr
 
 Real broker labels this must handle (from user): `קניה שח`, `מכירה שח`, `מכירה רצף`, `משיכת מס חול מטח`, `הפקדה דיבידנד מטח`, `קניה רצף`, `העברה מזומן בשח`, `דיבדנד`, `קניה חול מטח`, `דמי ניהול מזומן בשח`.
 
+### Security identifier resolution (the "מספר נייר / סימבול" column)
+
+The broker's security-number/symbol column carries special sentinel values. Two columns matter:
+- **`tickerColumn`** = the number/symbol column (`מספר נייר`, `סימבול`, `symbol`)
+- **`nameColumn`** = the security-name column (`שם נייר`, `name`) — NEW
+
+Resolution per row, by the value in `tickerColumn`:
+
+| Value in security-number column | Meaning | Action |
+|---|---|---|
+| **99028** (exact) | Security NOT traded in Tel Aviv (foreign) | Ticker = value from `nameColumn`; exchange = NYSE/NASDAQ (foreign) |
+| **900** (exact) | Not a security at all — cash deposit OR management/usage fee | Force a cash/fee classification; never SECURITY_*. Type label (`הפקדה`/`מזומן` → deposit; `דמי ניהול`/`דמי שימוש` → commission) disambiguates |
+| any other number | Israeli security | Ticker = the number itself; exchange = TASE |
+| letters / symbol (no number) | Foreign security (symbol given directly) | Ticker = that symbol; exchange = foreign |
+
+Rule of thumb encoded: foreign securities show a letter ticker (or 99028 + name); Israeli securities show the numeric security number.
+
+**Interaction with `guessType`:** a value of `900` in the security-number column is a strong negative signal — suppress SECURITY_BUY/SELL/DIVIDEND and fall through to the cash/fee keywords. A value of `99028` confirms "foreign" for exchange resolution.
+
 ### Currency / exchange resolution (priority)
 
 1. **Currency column** (existing `currencyColumn` detection, incl. `$`/`₪`/`ILS`/`שח`/`ש"ח`) — **highest priority**. If the type label conflicts with the currency column, the currency column wins.
@@ -99,11 +118,12 @@ Picks the column that best discriminates row types — which, given the data, is
 ## Behavior notes
 
 - When `guessType` returns `''`, the InterpretationCard shows a neutral "בחר סוג פעולה" prompt and the save button stays disabled until a type is chosen.
-- "תקן זיהוי" and the signature "שנה" link reuse the **existing** dropdowns/radio components — they are relocated into collapsed `<details>`, not rebuilt.
-- Save path (`saveRule`), rule schema, and `buildTransactions` are unchanged; only the dialog's presentation and the new pre-fill via `guessType`/`guessSignature` change.
+- "תקן זיהוי" and the signature "שנה" link reuse the **existing** dropdowns/radio components — they are relocated into collapsed `<details>`, not rebuilt. The correction panel gains one new dropdown for `nameColumn` (security-name column).
+- Save path (`saveRule`) and `buildTransactions` extend to carry `nameColumn` and apply the 99028/900 resolution; otherwise unchanged. `guessType`/`guessSignature` provide the new pre-fill.
+- Schema: add nullable `nameColumn`/`name_column` to `CsvImportRule`, the Zod schema in `api/csv-rules`, and `CsvRule`/`ClassifiedRow` types. Applied via `prisma db push` (Vercel runs it on deploy).
 
 ## Out of scope (YAGNI)
 
 - Inline-clickable interpretation sentence with popovers (Approach B).
-- Any change to the import API or DB schema.
+- Any change to the import API contract beyond passing the resolved ticker/exchange (server already accepts those).
 - Multi-row batch teaching UI — the existing one-row-teaches-many via `applyRuleToUnknowns` already covers it.

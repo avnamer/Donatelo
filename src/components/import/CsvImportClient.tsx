@@ -17,6 +17,12 @@ import {
   classifyAll,
   applyRuleToUnknowns,
   buildPatternFromRow,
+  guessType,
+  guessSignature,
+  isForeignRow,
+  resolveSecurityTicker,
+  FOREIGN_SECURITY_CODE,
+  CASH_FEE_CODE,
   type CsvRule,
   type CsvTransactionType,
   type ClassifiedRow,
@@ -106,7 +112,10 @@ function guessColumns(row: Record<string, string>) {
     keys.find(k => candidates.some(c => k === c || k.includes(c))) || ''
 
   return {
-    tickerColumn:   find('שם נייר', 'שם', 'ticker', 'Ticker', 'Symbol', 'symbol', 'נייר'),
+    // Security NUMBER / symbol column (primary identifier, holds the Israeli security number or 99028/900)
+    tickerColumn:   find('מספר נייר', 'סימבול', 'מספר', 'symbol', 'Symbol', 'ticker', 'Ticker'),
+    // Security NAME column (ticker fallback for foreign code 99028)
+    nameColumn:     find('שם נייר', 'שם הנייר', 'שם', 'name', 'Name'),
     sharesColumn:   find('כמות', 'מניות', 'Quantity', 'quantity', 'shares'),
     priceColumn:    find('שער ביצוע', 'מחיר', 'שער', 'Price', 'price'),
     amountColumn:   find('שווי', 'סכום', 'Amount', 'amount', 'ערך', 'נטו'),
@@ -168,8 +177,11 @@ function interpretRow(c: ClassifiedRow): Interpretation {
     sharesColumn: c.sharesColumn,
     priceColumn: c.priceColumn,
     amountColumn: c.amountColumn,
+    currencyColumn: c.currencyColumn,
   })
-  const ticker = c.tickerColumn ? (c.row[c.tickerColumn] ?? '').trim() : c.ticker
+  const ticker = c.tickerColumn
+    ? resolveSecurityTicker(c.row, { tickerColumn: c.tickerColumn, nameColumn: c.nameColumn, staticTicker: c.ticker })
+    : c.ticker
   const warnings: string[] = []
   const effectivePrice = price || (shares > 0 ? amount / shares : 0)
   const effectiveTotal = amount || (shares > 0 && price > 0 ? shares * price : 0)
@@ -276,7 +288,8 @@ interface TeachState {
   row: UnknownRow
   transactionType: CsvTransactionType | ''
   // Column-based mappings (for security types)
-  tickerColumn: string       // which column holds the ticker
+  tickerColumn: string       // which column holds the security number / symbol
+  nameColumn: string         // which column holds the security name (foreign-code fallback)
   sharesColumn: string       // which column holds quantity
   priceColumn: string        // which column holds price per share
   amountColumn: string       // which column holds total amount
@@ -462,19 +475,37 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
   function startTeach(u: UnknownRow) {
     const fields = Object.entries(u.row).filter(([, v]) => v.trim()).map(([k]) => k)
     const guessed = guessColumns(u.row)
+
+    // Auto-detect the transaction type from the row.
+    const securityNumber = guessed.tickerColumn ? (u.row[guessed.tickerColumn] ?? '').trim() : ''
+    const foreign = isForeignRow(u.row, { currencyColumn: guessed.currencyColumn, securityNumber })
+    const { amount } = extractFields(u.row, { amountColumn: guessed.amountColumn, currencyColumn: guessed.currencyColumn })
+    const detectedType = guessType(u.row, { securityNumber, foreign, amountSign: Math.sign(amount) })
+
+    // The column where the type label lives doubles as the signature for matching similar rows.
+    const typeKeywords = /דיבידנד|דיבדנד|מכירה|קני|מס |דמי|עמלה|הפקדה|משיכה|העברה|dividend|buy|sell|tax|fee|deposit|withdrawal/
+    const typeColumn = fields.find(k => typeKeywords.test(u.row[k] ?? ''))
+    const sig = guessSignature(u.row, unknowns.map(x => x.row), typeColumn)
+
+    // If a saved rule already exists for the detected type, prefer its column mappings.
+    const saved = detectedType
+      ? rules.find(r => r.transactionType === detectedType && (r.tickerColumn || r.amountColumn))
+      : undefined
+
     setTeach({
       row: u,
-      transactionType: '',
-      tickerColumn: guessed.tickerColumn,
-      sharesColumn: guessed.sharesColumn,
-      priceColumn: guessed.priceColumn,
-      amountColumn: guessed.amountColumn,
-      currencyColumn: guessed.currencyColumn,
-      exchangeForUsd: 'NYSE',
+      transactionType: detectedType,
+      tickerColumn: saved?.tickerColumn ?? guessed.tickerColumn,
+      nameColumn: saved?.nameColumn ?? guessed.nameColumn,
+      sharesColumn: saved?.sharesColumn ?? guessed.sharesColumn,
+      priceColumn: saved?.priceColumn ?? guessed.priceColumn,
+      amountColumn: saved?.amountColumn ?? guessed.amountColumn,
+      currencyColumn: saved?.currencyColumn ?? guessed.currencyColumn,
+      exchangeForUsd: (saved?.exchangeForUsd as 'NYSE' | 'NASDAQ') ?? (foreign ? 'NYSE' : 'NYSE'),
       exchangeOverride: '',
-      cashAccountName: 'מזומן ₪',
+      cashAccountName: foreign ? 'מזומן $' : 'מזומן ₪',
       toCashAccountName: 'מזומן $',
-      chosenField: fields[0] ? { field: fields[0], matchType: 'equals' } : null,
+      chosenField: sig ? { field: sig.field, matchType: sig.matchType } : (fields[0] ? { field: fields[0], matchType: 'equals' } : null),
       notes: '',
     })
   }
@@ -499,6 +530,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
         transactionType: teach.transactionType,
         // Security types: full column mappings
         tickerColumn: needsSecurity ? teach.tickerColumn || undefined : undefined,
+        nameColumn: needsSecurity ? teach.nameColumn || undefined : undefined,
         sharesColumn: needsSecurity ? teach.sharesColumn || undefined : undefined,
         priceColumn: needsSecurity ? teach.priceColumn || undefined : undefined,
         // All types that have an amount: save amountColumn + currencyColumn
@@ -532,9 +564,12 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
       index: teach.row.index,
       row: rowData,
       type: teach.transactionType as CsvTransactionType,
-      ticker: needsSecurity && teach.tickerColumn ? (rowData[teach.tickerColumn] ?? '').trim() : undefined,
+      ticker: needsSecurity && teach.tickerColumn
+        ? resolveSecurityTicker(rowData, { tickerColumn: teach.tickerColumn, nameColumn: teach.nameColumn })
+        : undefined,
       exchange: needsSecurity ? resolvedExchange : undefined,
       tickerColumn: needsSecurity ? teach.tickerColumn || undefined : undefined,
+      nameColumn: needsSecurity ? teach.nameColumn || undefined : undefined,
       sharesColumn: needsSecurity ? teach.sharesColumn || undefined : undefined,
       priceColumn: needsSecurity ? teach.priceColumn || undefined : undefined,
       amountColumn: needsAmount ? teach.amountColumn || undefined : undefined,
@@ -573,7 +608,9 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
         const hints = { sharesColumn: c.sharesColumn, priceColumn: c.priceColumn, amountColumn: c.amountColumn, currencyColumn: c.currencyColumn }
         const { date, shares, price, amount, usdAmount, currency } = extractFields(c.row, hints)
         const effectivePrice = price || (shares > 0 ? amount / shares : 0)
-        const ticker = (c.tickerColumn ? (c.row[c.tickerColumn] ?? '').trim() : c.ticker) || ''
+        const ticker = (c.tickerColumn
+          ? resolveSecurityTicker(c.row, { tickerColumn: c.tickerColumn, nameColumn: c.nameColumn, staticTicker: c.ticker })
+          : c.ticker) || ''
         const exchange = c.exchange || 'TASE'
         switch (c.type) {
           case 'SECURITY_BUY': return { type: 'SECURITY_BUY', date, ticker, exchange, shares, pricePerShare: effectivePrice, currency }
@@ -759,7 +796,7 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
             onSave={saveRule}
             onClose={() => setTeach(null)}
             saving={savingRule}
-            existingRules={rules}
+            siblingRows={unknowns.map(u => u.row)}
           />
         )}
       </div>
@@ -859,74 +896,68 @@ export function CsvImportClient({ portfolioId }: { portfolioId: string }) {
 // ─── Teach dialog ─────────────────────────────────
 
 function TeachDialog({
-  teach, onChange, onSave, onClose, saving, existingRules,
+  teach, onChange, onSave, onClose, saving, siblingRows,
 }: {
   teach: TeachState
   onChange: (t: TeachState) => void
   onSave: () => void
   onClose: () => void
   saving: boolean
-  existingRules: CsvRule[]
+  siblingRows: Record<string, string>[]
 }) {
   const fields = Object.entries(teach.row.row).filter(([, v]) => v.trim())
   const needsSecurity = ['SECURITY_BUY', 'SECURITY_SELL', 'DIVIDEND'].includes(teach.transactionType)
   const needsFx = teach.transactionType === 'FX_CONVERSION'
   const needsCash = ['CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'DIVIDEND'].includes(teach.transactionType)
 
-  // Find saved column settings for this transaction type
-  const savedCols = existingRules.find(
-    r => r.transactionType === teach.transactionType && (r.tickerColumn || r.sharesColumn || r.priceColumn)
-  )
-  const [colsLocked, setColsLocked] = useState(!!savedCols)
-
-  // Auto-fill columns when transaction type changes and a saved setting exists
-  const handleTypeChange = (newType: string) => {
-    const saved = existingRules.find(
-      r => r.transactionType === newType && (r.tickerColumn || r.sharesColumn || r.priceColumn)
-    )
-    onChange({
-      ...teach,
-      transactionType: newType as CsvTransactionType,
-      tickerColumn: saved?.tickerColumn ?? teach.tickerColumn,
-      sharesColumn: saved?.sharesColumn ?? teach.sharesColumn,
-      priceColumn: saved?.priceColumn ?? teach.priceColumn,
-      amountColumn: saved?.amountColumn ?? teach.amountColumn,
-      currencyColumn: saved?.currencyColumn ?? teach.currencyColumn,
-      exchangeForUsd: (saved?.exchangeForUsd as 'NYSE' | 'NASDAQ') ?? teach.exchangeForUsd,
-      exchangeOverride: '',
-    })
-    setColsLocked(!!saved)
-  }
-
-  // Resolve currency from the designated column (or fallback to known names)
+  // Resolve currency / exchange for the live interpretation.
   const currencyRaw = teach.currencyColumn
     ? teach.row.row[teach.currencyColumn]
     : (teach.row.row['מטבע'] || teach.row.row['Currency'] || '')
   const rawNorm = (currencyRaw ?? '').trim().toUpperCase()
   const ILS_VARIANTS = ['ILS', '₪', 'שח', 'ש"ח', "ש'ח"]
-  const rowCurrency = rawNorm === '$' ? 'USD' : ILS_VARIANTS.includes(rawNorm) ? 'ILS' : rawNorm
+  const securityNumber = teach.tickerColumn ? (teach.row.row[teach.tickerColumn] ?? '').trim() : ''
+  const rowCurrency = rawNorm === '$' ? 'USD'
+    : ILS_VARIANTS.includes(rawNorm) ? 'ILS'
+    : (securityNumber === FOREIGN_SECURITY_CODE ? 'USD' : rawNorm)
   const detectedExchange = rowCurrency === 'USD' ? teach.exchangeForUsd : (rowCurrency === 'ILS' ? 'TASE' : '')
   const autoExchange = teach.exchangeOverride || detectedExchange || '?'
 
-  const livePreview: ClassifiedRow | null = teach.transactionType
+  const livePreview: ClassifiedRow | null = teach.transactionType && teach.transactionType !== 'IGNORE'
     ? {
         index: teach.row.index,
         row: teach.row.row,
         type: teach.transactionType as CsvTransactionType,
-        ticker: teach.tickerColumn ? (teach.row.row[teach.tickerColumn] ?? '').trim() : undefined,
+        ticker: teach.tickerColumn
+          ? resolveSecurityTicker(teach.row.row, { tickerColumn: teach.tickerColumn, nameColumn: teach.nameColumn })
+          : undefined,
         exchange: autoExchange,
         tickerColumn: teach.tickerColumn || undefined,
+        nameColumn: teach.nameColumn || undefined,
         sharesColumn: teach.sharesColumn || undefined,
         priceColumn: teach.priceColumn || undefined,
         amountColumn: teach.amountColumn || undefined,
+        currencyColumn: teach.currencyColumn || undefined,
         cashAccountName: teach.cashAccountName || undefined,
         toCashAccountName: teach.toCashAccountName || undefined,
       }
     : null
+  const interp = livePreview ? interpretRow(livePreview) : null
+
+  // How many rows (including this one) the chosen signature will match.
+  const matchCount = teach.chosenField
+    ? siblingRows.filter(r => {
+        const cell = (r[teach.chosenField!.field] ?? '').trim()
+        const val = (teach.row.row[teach.chosenField!.field] ?? '').trim()
+        return teach.chosenField!.matchType === 'equals' ? cell === val : (val !== '' && cell.includes(val))
+      }).length
+    : 0
+
+  const setCol = (col: keyof TeachState, value: string) => onChange({ ...teach, [col]: value })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-card rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-5">
+      <div className="bg-card rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-lg">לַמֵּד את המערכת</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
@@ -934,15 +965,13 @@ function TeachDialog({
           </button>
         </div>
 
-        <RowTable row={teach.row.row} />
-
-        {/* Transaction type */}
+        {/* Transaction type — auto-guessed, editable */}
         <div className="space-y-1.5">
           <label className="text-sm font-medium">סוג פעולה</label>
           <select
             className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
             value={teach.transactionType}
-            onChange={e => handleTypeChange(e.target.value)}
+            onChange={e => onChange({ ...teach, transactionType: e.target.value as CsvTransactionType })}
           >
             <option value="">בחר…</option>
             {TX_TYPE_OPTIONS.map(t => (
@@ -951,72 +980,60 @@ function TeachDialog({
           </select>
         </div>
 
-        {/* Security column mappings */}
-        {needsSecurity && (
-          <div className="rounded-lg bg-muted/40 p-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-muted-foreground">
-                מיפוי עמודות
-                {colsLocked && <span className="mr-1 text-green-600 dark:text-green-400">✓ נשמר</span>}
-              </p>
-              {colsLocked
-                ? <button onClick={() => setColsLocked(false)} className="text-xs text-primary underline">ערוך</button>
-                : savedCols && <button onClick={() => setColsLocked(true)} className="text-xs text-muted-foreground underline">בטל עריכה</button>
-              }
+        {/* What the system understood */}
+        {interp ? (
+          <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-gain shrink-0 mt-0.5" />
+              <p className="text-sm font-medium leading-relaxed">{interp.understood}</p>
             </div>
-
-            {colsLocked ? (
-              // Locked view — shows saved values read-only
-              <div className="space-y-1 text-xs text-muted-foreground">
-                {teach.tickerColumn && <p>טיקר ← <span className="font-medium text-foreground">{teach.tickerColumn}</span> = "{(teach.row.row[teach.tickerColumn] ?? '').trim()}"</p>}
-                {teach.sharesColumn && <p>כמות ← <span className="font-medium text-foreground">{teach.sharesColumn}</span> = {teach.row.row[teach.sharesColumn] ?? ''}</p>}
-                {teach.priceColumn && <p>מחיר ← <span className="font-medium text-foreground">{teach.priceColumn}</span> = {teach.row.row[teach.priceColumn] ?? ''}</p>}
-                {teach.amountColumn && <p>סכום כולל ← <span className="font-medium text-foreground">{teach.amountColumn}</span> = {teach.row.row[teach.amountColumn] ?? ''}</p>}
-                {teach.currencyColumn && <p>מטבע ← <span className="font-medium text-foreground">{teach.currencyColumn}</span> = {teach.row.row[teach.currencyColumn] ?? ''}</p>}
-                <p>בורסה ← {autoExchange}{autoExchange === '?' ? ' (לא ניתן לזהות — בחר עמודת מטבע)' : ''}</p>
+            <p className="text-xs text-muted-foreground pr-6">← {interp.willDo}</p>
+            {interp.warnings.length > 0 && (
+              <div className="pr-6 space-y-0.5">
+                {interp.warnings.map((w, i) => (
+                  <p key={i} className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 shrink-0" />{w}
+                  </p>
+                ))}
               </div>
-            ) : (
-              // Edit view — dropdowns
-              <>
-                {(['tickerColumn', 'sharesColumn', 'priceColumn', 'amountColumn', 'currencyColumn'] as const).map(col => {
-                  const labels: Record<string, string> = {
-                    tickerColumn: 'עמודת הטיקר / שם נייר',
-                    sharesColumn: 'עמודת כמות',
-                    priceColumn: 'עמודת מחיר ליחידה',
-                    amountColumn: 'עמודת סכום כולל',
-                    currencyColumn: 'עמודת מטבע (ILS / USD)',
-                  }
-                  const val = teach[col]
-                  return (
-                    <div key={col} className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">{labels[col]}</label>
-                      <select
-                        className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
-                        value={val}
-                        onChange={e => onChange({ ...teach, [col]: e.target.value })}
-                      >
-                        <option value="">— לא רלוונטי —</option>
-                        {fields.map(([k, v]) => (
-                          <option key={k} value={k}>{k} = {v.slice(0, 25)}</option>
-                        ))}
-                      </select>
-                      {val && <p className="text-xs text-muted-foreground">ערך בשורה זו: {teach.row.row[val] ?? ''}</p>}
-                    </div>
-                  )
-                })}
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground rounded-xl border border-dashed p-4 text-center">
+            בחר סוג פעולה כדי לראות מה המערכת מבינה מהשורה
+          </p>
+        )}
+
+        {/* Correct detection — collapsed by default */}
+        {teach.transactionType && teach.transactionType !== 'IGNORE' && (
+          <details className="rounded-lg border bg-background/50">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-muted-foreground">
+              תקן זיהוי
+            </summary>
+            <div className="px-3 pb-3 space-y-3">
+              {needsSecurity && (
+                <>
+                  <ColMap label="עמודת מספר נייר / סימבול" col="tickerColumn" teach={teach} fields={fields} onSet={setCol} />
+                  <ColMap label="עמודת שם נייר (גיבוי לנייר זר)" col="nameColumn" teach={teach} fields={fields} onSet={setCol} />
+                  <ColMap label="עמודת כמות" col="sharesColumn" teach={teach} fields={fields} onSet={setCol} />
+                  <ColMap label="עמודת מחיר ליחידה" col="priceColumn" teach={teach} fields={fields} onSet={setCol} />
+                </>
+              )}
+              <ColMap label="עמודת סכום כולל" col="amountColumn" teach={teach} fields={fields} onSet={setCol} />
+              <ColMap label="עמודת מטבע (ILS / USD)" col="currencyColumn" teach={teach} fields={fields} onSet={setCol} />
+
+              {needsSecurity && (
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">
                     בורסה
-                    {rowCurrency === 'USD' && !teach.exchangeOverride && <span className="mr-1 text-blue-500 text-[10px]">($/{rowCurrency} → {detectedExchange})</span>}
-                    {rowCurrency === 'ILS' && !teach.exchangeOverride && <span className="mr-1 text-[10px] text-muted-foreground">(ILS/₪ → TASE)</span>}
-                    {!rowCurrency && !teach.exchangeOverride && <span className="mr-1 text-amber-500 text-[10px]">(מטבע לא זוהה)</span>}
+                    {!teach.exchangeOverride && rowCurrency === 'USD' && <span className="mr-1 text-[10px] text-blue-500">(זוהה זר → {detectedExchange})</span>}
+                    {!teach.exchangeOverride && rowCurrency === 'ILS' && <span className="mr-1 text-[10px] text-muted-foreground">(זוהה ILS → TASE)</span>}
                   </label>
                   <select
                     className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
                     value={teach.exchangeOverride || detectedExchange || ''}
                     onChange={e => {
                       const v = e.target.value
-                      // If user picks the same as auto-detected, clear override
                       onChange({ ...teach, exchangeOverride: v === detectedExchange ? '' : v, exchangeForUsd: (v === 'NYSE' || v === 'NASDAQ') ? v as 'NYSE' | 'NASDAQ' : teach.exchangeForUsd })
                     }}
                   >
@@ -1025,114 +1042,81 @@ function TeachDialog({
                     <option value="NYSE">NYSE — ניו יורק</option>
                     <option value="NASDAQ">NASDAQ</option>
                   </select>
-                  {teach.exchangeOverride && <p className="text-xs text-primary">בורסה שונתה ידנית ל-{teach.exchangeOverride}</p>}
+                  {teach.exchangeOverride && <p className="text-[10px] text-primary">שונה ידנית ל-{teach.exchangeOverride}</p>}
                 </div>
-              </>
-            )}
-          </div>
-        )}
+              )}
 
-        {/* Amount + currency column selectors for non-security types */}
-        {!needsSecurity && !needsFx && teach.transactionType !== '' && teach.transactionType !== 'IGNORE' && (
-          <div className="rounded-lg bg-muted/40 p-3 space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground">מיפוי עמודות</p>
-            {(['amountColumn', 'currencyColumn'] as const).map(col => {
-              const labels = { amountColumn: 'עמודת סכום', currencyColumn: 'עמודת מטבע (ILS / USD)' }
-              const val = teach[col]
-              return (
-                <div key={col} className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">{labels[col]}</label>
-                  <select
+              {needsCash && !needsFx && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">חשבון מזומן</label>
+                  <input
                     className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
-                    value={val}
-                    onChange={e => onChange({ ...teach, [col]: e.target.value })}
-                  >
-                    <option value="">— לא רלוונטי —</option>
-                    {fields.map(([k, v]) => (
-                      <option key={k} value={k}>{k} = {v.slice(0, 25)}</option>
-                    ))}
-                  </select>
-                  {val && <p className="text-xs text-muted-foreground">ערך בשורה זו: {teach.row.row[val] ?? ''}</p>}
+                    value={teach.cashAccountName}
+                    onChange={e => onChange({ ...teach, cashAccountName: e.target.value })}
+                  />
                 </div>
-              )
-            })}
-          </div>
-        )}
+              )}
 
-        {needsCash && !needsFx && (
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">חשבון מזומן</label>
-            <input
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-              value={teach.cashAccountName}
-              onChange={e => onChange({ ...teach, cashAccountName: e.target.value })}
-            />
-          </div>
-        )}
-
-        {needsFx && (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">חשבון ILS (מקור)</label>
-              <input
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                value={teach.cashAccountName}
-                onChange={e => onChange({ ...teach, cashAccountName: e.target.value })}
-              />
+              {needsFx && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">חשבון ILS (מקור)</label>
+                    <input className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs" value={teach.cashAccountName} onChange={e => onChange({ ...teach, cashAccountName: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">חשבון USD (יעד)</label>
+                    <input className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs" value={teach.toCashAccountName} onChange={e => onChange({ ...teach, toCashAccountName: e.target.value })} />
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">חשבון USD (יעד)</label>
-              <input
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                value={teach.toCashAccountName}
-                onChange={e => onChange({ ...teach, toCashAccountName: e.target.value })}
-              />
-            </div>
+          </details>
+        )}
+
+        {/* Applies to N similar rows — signature auto-picked, changeable */}
+        {teach.chosenField && (
+          <div className="rounded-lg bg-primary/5 px-3 py-2 text-xs space-y-1">
+            <p className="text-foreground">
+              ↻ יחול על <span className="font-semibold">{matchCount}</span> שורות דומות
+              <span className="text-muted-foreground"> (עמודת "{teach.chosenField.field}" {teach.chosenField.matchType === 'equals' ? '=' : 'מכיל'} "{(teach.row.row[teach.chosenField.field] ?? '').trim()}")</span>
+            </p>
+            <details>
+              <summary className="cursor-pointer select-none text-primary underline">שנה שדה זיהוי</summary>
+              <div className="mt-2 space-y-1.5 max-h-36 overflow-y-auto">
+                {fields.map(([k, v]) => (
+                  <label key={k} className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="patternField"
+                      className="mt-0.5"
+                      checked={teach.chosenField?.field === k}
+                      onChange={() => onChange({ ...teach, chosenField: { field: k, matchType: 'equals' } })}
+                    />
+                    <span><span className="font-medium">{k}</span> = <span className="text-muted-foreground">{v}</span></span>
+                  </label>
+                ))}
+                <div className="flex gap-3 pt-1">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" checked={teach.chosenField.matchType === 'equals'} onChange={() => onChange({ ...teach, chosenField: { ...teach.chosenField!, matchType: 'equals' } })} />
+                    זהה בדיוק
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" checked={teach.chosenField.matchType === 'contains'} onChange={() => onChange({ ...teach, chosenField: { ...teach.chosenField!, matchType: 'contains' } })} />
+                    מכיל
+                  </label>
+                </div>
+              </div>
+            </details>
           </div>
         )}
 
-        {/* Pattern field picker */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">זהה שורות דומות לפי שדה</label>
-          <div className="space-y-1.5 max-h-36 overflow-y-auto">
-            {fields.map(([k, v]) => (
-              <label key={k} className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="patternField"
-                  className="mt-1"
-                  checked={teach.chosenField?.field === k}
-                  onChange={() => onChange({ ...teach, chosenField: { field: k, matchType: 'equals' } })}
-                />
-                <span className="text-xs">
-                  <span className="font-medium">{k}</span>{' = '}
-                  <span className="text-muted-foreground">{v}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-          {teach.chosenField && (
-            <div className="flex gap-3 mt-1 text-xs">
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input type="radio" checked={teach.chosenField.matchType === 'equals'} onChange={() => onChange({ ...teach, chosenField: { ...teach.chosenField!, matchType: 'equals' } })} />
-                זהה בדיוק
-              </label>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input type="radio" checked={teach.chosenField.matchType === 'contains'} onChange={() => onChange({ ...teach, chosenField: { ...teach.chosenField!, matchType: 'contains' } })} />
-                מכיל
-              </label>
-            </div>
-          )}
-        </div>
-
-        {/* Live preview */}
-        {livePreview && (
-          <div className="rounded-lg bg-muted/50 p-3 space-y-1 text-xs">
-            <p className="font-medium text-muted-foreground">תצוגה מקדימה</p>
-            <p className="font-medium">{interpretRow(livePreview).understood}</p>
-            <p className="text-muted-foreground">{interpretRow(livePreview).willDo}</p>
-          </div>
-        )}
+        {/* Raw data — collapsed */}
+        <details className="rounded-lg border bg-background/50">
+          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-muted-foreground">
+            הצג נתונים גולמיים
+          </summary>
+          <div className="px-3 pb-3"><RowTable row={teach.row.row} /></div>
+        </details>
 
         <div className="flex gap-2 pt-1">
           <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted">
@@ -1143,10 +1127,39 @@ function TeachDialog({
             disabled={saving || !teach.transactionType || !teach.chosenField}
             className="flex-1 rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'שמור כלל ויישם'}
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'שמור ולמד'}
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// One column-mapping dropdown inside the "תקן זיהוי" panel.
+function ColMap({
+  label, col, teach, fields, onSet,
+}: {
+  label: string
+  col: keyof TeachState
+  teach: TeachState
+  fields: [string, string][]
+  onSet: (col: keyof TeachState, value: string) => void
+}) {
+  const val = (teach[col] as string) || ''
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      <select
+        className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs"
+        value={val}
+        onChange={e => onSet(col, e.target.value)}
+      >
+        <option value="">— לא רלוונטי —</option>
+        {fields.map(([k, v]) => (
+          <option key={k} value={k}>{k} = {v.slice(0, 25)}</option>
+        ))}
+      </select>
+      {val && <p className="text-[10px] text-muted-foreground">ערך בשורה זו: {teach.row.row[val] ?? ''}</p>}
     </div>
   )
 }

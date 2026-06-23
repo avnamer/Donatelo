@@ -256,6 +256,7 @@ model CsvImportRule {
   notes             String?
   // Column mappings — read value from this column in each row
   tickerColumn      String?  @map("ticker_column")
+  nameColumn        String?  @map("name_column")       // security-name column; ticker fallback for code 99028
   sharesColumn      String?  @map("shares_column")
   priceColumn       String?  @map("price_column")
   amountColumn      String?  @map("amount_column")
